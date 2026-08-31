@@ -1,0 +1,81 @@
+version = 1
+
+[server]
+bind = "10.20.0.15"
+port = 8000
+path = "/mcp"
+publicBaseUrl = "https://analysis-vm.example:8000"
+tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
+
+[server.tls]
+mode = "proxy"
+trustedProxyCidrs = ["10.20.0.1/32"]
+
+[x64dbg]
+enabled = true
+url = "http://127.0.0.1:8064/mcp"
+tokenEnv = "X64DBG_MCP_TOKEN"
+
+[x64dbg.safety]
+readOnlyTools = ["debugger.state", "debugger.snapshot", "memory.read", "memory.map"]
+mutationTools = ["debugger.resume", "debugger.pause", "memory.write"]
+
+[x32dbg]
+enabled = true
+url = "http://127.0.0.1:8032/mcp"
+tokenEnv = "X64DBG_MCP_TOKEN"
+
+[x32dbg.safety]
+readOnlyTools = ["debugger.state", "debugger.snapshot", "memory.read", "memory.map"]
+mutationTools = ["debugger.resume", "debugger.pause", "memory.write"]
+
+[ce]
+enabled = true
+url = "http://127.0.0.1:8001/mcp"
+tokenEnv = "CE_MCP_TOKEN"
+
+[ce.safety]
+readOnlyTools = [
+  "ce.status",
+  "ce.memory_read",
+  "ce.memory_map",
+  "ce.memory_analysis",
+  "ce.symbols",
+  "ce.disassembly",
+  "ce.pointer",
+  "ce.debug_events",
+  "ce.registers",
+  "ce.threads",
+]
+mutationTools = [
+  "ce.process",
+  "ce.scan",
+  "ce.operations",
+  "ce.signature",
+  "ce.structures",
+  "ce.artifacts",
+  "ce.debug_control",
+  "ce.breakpoints",
+]
+
+[discovery]
+intervalMs = 5000
+connectTimeoutMs = 1000
+listTimeoutMs = 3000
+stableSuccesses = 2
+stableFailures = 2
+jitterPercent = 20
+
+[limits]
+requestBodyBytes = 1048576
+downstreamCatalogBytes = 1048576
+downstreamToolCount = 500
+downstreamToolDefinitionBytes = 65536
+toolResultBytes = 4194304
+globalConcurrentCalls = 32
+perBackendConcurrentCalls = 4
+defaultToolTimeoutMs = 30000
+refreshCooldownMs = 1000
+
+[naming]
+mode = "dotted"
