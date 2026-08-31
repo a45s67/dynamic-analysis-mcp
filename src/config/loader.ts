@@ -24,6 +24,10 @@ export interface ResolvedBackendConfig {
   readonly bearerToken: string;
   readonly readOnlyTools: ReadonlySet<string>;
   readonly mutationTools: ReadonlySet<string>;
+  readonly lifecycle?: {
+    readonly command: string;
+    readonly args: readonly string[];
+  };
 }
 
 export interface ResolvedGatewayConfig {
@@ -107,6 +111,22 @@ export async function loadGatewayConfig(configFile: string): Promise<ResolvedGat
     backendTypes.map(async (backendType): Promise<ResolvedBackendConfig> => {
       const backend = parsed.data[backendType];
       const bearerToken = resolveToken(backend.tokenEnv, backendType);
+      let lifecycle: ResolvedBackendConfig["lifecycle"];
+      if (backend.lifecycleCommand !== undefined && backend.lifecycleArgs !== undefined) {
+        if (!path.isAbsolute(backend.lifecycleCommand)) {
+          throw new ConfigurationError(`${backendType} lifecycleCommand must be absolute`);
+        }
+        const metadata = await lstat(backend.lifecycleCommand).catch(() => undefined);
+        if (metadata === undefined || !metadata.isFile() || metadata.isSymbolicLink()) {
+          throw new ConfigurationError(
+            `${backendType} lifecycleCommand must be a non-symlink regular file`,
+          );
+        }
+        lifecycle = Object.freeze({
+          command: backend.lifecycleCommand,
+          args: Object.freeze([...backend.lifecycleArgs]),
+        });
+      }
       return Object.freeze({
         id: backendType,
         type: backendType,
@@ -115,6 +135,7 @@ export async function loadGatewayConfig(configFile: string): Promise<ResolvedGat
         bearerToken,
         readOnlyTools: new Set(backend.safety.readOnlyTools),
         mutationTools: new Set(backend.safety.mutationTools),
+        ...(lifecycle === undefined ? {} : { lifecycle }),
       });
     }),
   );

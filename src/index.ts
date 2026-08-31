@@ -1,4 +1,5 @@
 export * from "./backend/mcp-client.js";
+export * from "./backend/lifecycle.js";
 export * from "./app/runtime.js";
 export * from "./catalog/canonical-json.js";
 export * from "./catalog/catalog.js";

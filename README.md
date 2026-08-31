@@ -18,7 +18,9 @@ HTTP endpoint, and an official-SDK downstream HTTP client. Integration tests run
 an official MCP client through the Gateway into a second fake MCP HTTP server.
 
 Strict TOML configuration loading and the initial runtime discovery path are now
-implemented. Stateful upstream session tracking, catalog-change signaling,
+implemented. Optional flat backend lifecycle commands and the bounded
+`gateway.backend_control` management tool are also implemented. Stateful
+upstream session tracking, catalog-change signaling,
 backend health thresholds, direct TLS, and installer/service packaging remain
 subsequent MVP phases.
 

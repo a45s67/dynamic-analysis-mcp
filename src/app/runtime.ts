@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 
 import { McpBackendClient } from "../backend/mcp-client.js";
+import { runLifecycleCommand } from "../backend/lifecycle.js";
+import type { LifecycleAction } from "../backend/lifecycle.js";
 import { CatalogPublisher } from "../catalog/catalog.js";
 import type { ResolvedGatewayConfig } from "../config/loader.js";
 import type {
@@ -63,6 +65,7 @@ export class GatewayRuntime {
   readonly #backendStates = new Map<string, BackendRuntimeState>();
   readonly #startedAt = Date.now();
   #refreshPromise: Promise<void> | undefined;
+  readonly #activeLifecycle = new Set<string>();
   #http: RunningGatewayHttpServer | undefined;
 
   public constructor(config: ResolvedGatewayConfig) {
@@ -85,6 +88,111 @@ export class GatewayRuntime {
     const management: ManagementToolHandler = {
       call: async (route, argumentsValue, captured, traceId) => {
         switch (route.managementName) {
+          case "gateway.backend_control": {
+            const keys = Object.keys(argumentsValue);
+            const backendId = argumentsValue.backendId;
+            const action = argumentsValue.action;
+            const force = argumentsValue.force ?? false;
+            const validBackend = backendId === "x32dbg" || backendId === "x64dbg";
+            const validAction =
+              action === "status" ||
+              action === "start" ||
+              action === "stop" ||
+              action === "restart";
+            const validKeys = keys.every(
+              (key) => key === "backendId" || key === "action" || key === "force",
+            );
+            if (
+              !validBackend ||
+              !validAction ||
+              typeof force !== "boolean" ||
+              !validKeys ||
+              (force && action !== "stop" && action !== "restart")
+            ) {
+              return {
+                ok: false,
+                error: {
+                  code: "INVALID_TOOL_ARGUMENTS",
+                  message: "backendId, action, and optional force do not match the closed schema",
+                  catalogGeneration: captured.generation,
+                  retryable: false,
+                  safeToRetry: false,
+                  dispatchStarted: false,
+                  traceId,
+                },
+              };
+            }
+            const backend = this.#config.backends.find(({ id }) => id === backendId);
+            if (backend?.enabled !== true || backend.lifecycle === undefined) {
+              return {
+                ok: false,
+                error: {
+                  code: "BACKEND_CONTROL_FAILED",
+                  message: "backend lifecycle control is not configured and enabled",
+                  backend: backendId,
+                  catalogGeneration: captured.generation,
+                  retryable: false,
+                  safeToRetry: false,
+                  dispatchStarted: false,
+                  traceId,
+                },
+              };
+            }
+            if (this.#activeLifecycle.has(backendId)) {
+              return {
+                ok: false,
+                error: {
+                  code: "BACKEND_CONTROL_BUSY",
+                  message: "another lifecycle operation is active for this backend",
+                  backend: backendId,
+                  catalogGeneration: captured.generation,
+                  retryable: false,
+                  safeToRetry: false,
+                  dispatchStarted: false,
+                  traceId,
+                },
+              };
+            }
+            this.#activeLifecycle.add(backendId);
+            try {
+              const execution = await runLifecycleCommand(
+                backend.lifecycle.command,
+                backend.lifecycle.args,
+                action as LifecycleAction,
+                force,
+                Math.max(1_000, Math.min(60_000, this.#config.limits.defaultToolTimeoutMs)),
+              );
+              if (!execution.ok) {
+                const readOnly = action === "status";
+                return {
+                  ok: false,
+                  error: {
+                    code:
+                      execution.outcomeUnknown && !readOnly
+                        ? "OUTCOME_UNKNOWN"
+                        : "BACKEND_CONTROL_FAILED",
+                    message: execution.message,
+                    backend: backendId,
+                    catalogGeneration: captured.generation,
+                    retryable: readOnly,
+                    safeToRetry: readOnly,
+                    dispatchStarted: execution.dispatchStarted,
+                    traceId,
+                  },
+                };
+              }
+              if (action !== "status") await this.refresh();
+              return success({
+                backendId,
+                action,
+                controller: execution.value,
+                catalogGeneration: this.#publisher.current().generation,
+                traceId,
+              });
+            } finally {
+              this.#activeLifecycle.delete(backendId);
+            }
+          }
           case "gateway.backends":
             return success({
               backends: [...this.#backendStates.values()].map((backend) => ({

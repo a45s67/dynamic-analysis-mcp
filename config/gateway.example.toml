@@ -15,6 +15,9 @@ trustedProxyCidrs = ["10.20.0.1/32"]
 enabled = true
 url = "http://127.0.0.1:8064/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
+# Optional host control stays flat in this existing backend table:
+# lifecycleCommand = 'C:\tools\x64dbg\release\mcp\x96dbg-mcp-control.exe'
+# lifecycleArgs = ['--backend', 'x64', '--root', 'C:\tools\x64dbg']
 
 [x64dbg.safety]
 readOnlyTools = ["debugger.state", "debugger.snapshot", "memory.read", "memory.map"]
@@ -24,6 +27,8 @@ mutationTools = ["debugger.resume", "debugger.pause", "memory.write"]
 enabled = true
 url = "http://127.0.0.1:8032/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
+# lifecycleCommand = 'C:\tools\x64dbg\release\mcp\x96dbg-mcp-control.exe'
+# lifecycleArgs = ['--backend', 'x32', '--root', 'C:\tools\x64dbg']
 
 [x32dbg.safety]
 readOnlyTools = ["debugger.state", "debugger.snapshot", "memory.read", "memory.map"]

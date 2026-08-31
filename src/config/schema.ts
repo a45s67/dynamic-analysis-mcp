@@ -33,14 +33,35 @@ const TokenEnvSchema = z
   .max(128)
   .regex(/^[A-Z_][A-Z0-9_]*$/, "tokenEnv must be an uppercase environment variable name");
 
+const LifecycleArgumentSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .regex(/^[^\u0000-\u001f\u007f]+$/, "lifecycle arguments must not contain control characters");
+
 const BackendSchema = z
   .object({
     enabled: z.boolean(),
     url: z.url().max(2048),
     tokenEnv: TokenEnvSchema,
+    lifecycleCommand: z
+      .string()
+      .min(1)
+      .max(32_767)
+      .regex(/^[^\u0000-\u001f\u007f]+$/, "lifecycle command must not contain control characters")
+      .optional(),
+    lifecycleArgs: z.array(LifecycleArgumentSchema).max(16).optional(),
     safety: SafetySchema,
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.lifecycleCommand === undefined) !== (value.lifecycleArgs === undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "lifecycleCommand and lifecycleArgs must be configured together",
+      });
+    }
+  });
 
 const ProxyTlsSchema = z
   .object({
@@ -152,6 +173,13 @@ export const GatewayConfigFileSchema = z
       } catch {
         // z.url reports the primary issue.
       }
+    }
+    if (value.ce.lifecycleCommand !== undefined || value.ce.lifecycleArgs !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["ce"],
+        message: "CE lifecycle control is not supported",
+      });
     }
     if (value.limits.perBackendConcurrentCalls > value.limits.globalConcurrentCalls) {
       context.addIssue({

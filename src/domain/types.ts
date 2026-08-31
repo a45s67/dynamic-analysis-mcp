@@ -33,7 +33,11 @@ export interface BackendToolRoute {
 
 export interface ManagementToolRoute {
   readonly routeKind: "management";
-  readonly managementName: "gateway.backends" | "gateway.refresh" | "gateway.status";
+  readonly managementName:
+    | "gateway.backend_control"
+    | "gateway.backends"
+    | "gateway.refresh"
+    | "gateway.status";
   readonly safetyClass: SafetyClass;
 }
 
@@ -73,6 +77,8 @@ export interface BackendClient {
 export interface GatewayToolError {
   readonly code:
     | "BACKEND_UNAVAILABLE"
+    | "BACKEND_CONTROL_BUSY"
+    | "BACKEND_CONTROL_FAILED"
     | "INTERNAL_ERROR"
     | "INVALID_TOOL_ARGUMENTS"
     | "OUTCOME_UNKNOWN"

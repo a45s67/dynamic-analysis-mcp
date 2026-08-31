@@ -115,4 +115,47 @@ describe("strict TOML configuration", () => {
     expect(String(failure)).not.toContain(secret);
     expect(String(failure)).toContain("32..512 visible ASCII");
   });
+
+  it("loads flat lifecycle fields from an existing backend table", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const controller = path.join(fixtureRoot, "controller.exe");
+    await writeFile(controller, "fixture");
+    const original = await readFile(filename, "utf8");
+    const literalPath = controller.replaceAll("'", "''");
+    await writeFile(
+      filename,
+      original.replace(
+        'url = "http://127.0.0.1:8064/mcp"',
+        `url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = '${literalPath}'\nlifecycleArgs = ['--backend', 'x64']`,
+      ),
+    );
+
+    const config = await loadGatewayConfig(filename);
+    expect(config.backends.find(({ id }) => id === "x64dbg")?.lifecycle).toEqual({
+      command: controller,
+      args: ["--backend", "x64"],
+    });
+  });
+
+  it("rejects incomplete or relative lifecycle configuration", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    await writeFile(
+      filename,
+      original.replace(
+        'url = "http://127.0.0.1:8064/mcp"',
+        'url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = "controller.exe"',
+      ),
+    );
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/x64dbg/);
+
+    await writeFile(
+      filename,
+      original.replace(
+        'url = "http://127.0.0.1:8064/mcp"',
+        'url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = "controller.exe"\nlifecycleArgs = []',
+      ),
+    );
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/must be absolute/);
+  });
 });

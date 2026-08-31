@@ -16,6 +16,27 @@ const RESERVED_BACKEND_TYPE = "gateway";
 
 const MANAGEMENT_TOOLS: readonly PublicToolDefinition[] = Object.freeze([
   Object.freeze({
+    name: "gateway.backend_control",
+    description:
+      "Start, stop, restart, or inspect one backend host through its configured bounded controller.",
+    inputSchema: Object.freeze({
+      type: "object",
+      required: ["backendId", "action"],
+      properties: Object.freeze({
+        backendId: Object.freeze({ enum: ["x32dbg", "x64dbg"] }),
+        action: Object.freeze({ enum: ["status", "start", "stop", "restart"] }),
+        force: Object.freeze({ type: "boolean" }),
+      }),
+      additionalProperties: false,
+    }),
+    annotations: Object.freeze({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    }),
+  }),
+  Object.freeze({
     name: "gateway.backends",
     description: "List configured backends and their sanitized discovery state.",
     inputSchema: Object.freeze({ type: "object", additionalProperties: false }),
@@ -132,13 +153,20 @@ export function buildCatalog(
   const routes = new Map<string, ToolRoute>();
 
   for (const tool of MANAGEMENT_TOOLS) {
-    const managementName = tool.name as "gateway.backends" | "gateway.refresh" | "gateway.status";
+    const managementName = tool.name as
+      | "gateway.backend_control"
+      | "gateway.backends"
+      | "gateway.refresh"
+      | "gateway.status";
     routes.set(
       managementName,
       Object.freeze({
         routeKind: "management",
         managementName,
-        safetyClass: managementName === "gateway.refresh" ? "mutation" : "read",
+        safetyClass:
+          managementName === "gateway.refresh" || managementName === "gateway.backend_control"
+            ? "mutation"
+            : "read",
       }),
     );
   }

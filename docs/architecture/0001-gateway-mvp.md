@@ -109,8 +109,10 @@ not tokens, arguments, memory contents, or full results by default.
 ### Explicit non-responsibilities
 
 The Gateway does not call debugger SDKs, interpret debugger state, serialize
-debugger-affine mutations, unify equivalent tools across debuggers, dynamically
-register backends, or launch debugger processes. Those remain backend concerns.
+debugger-affine mutations, unify equivalent tools across debuggers, or
+dynamically register backends. It may invoke an explicitly configured,
+backend-owned lifecycle controller as a bounded child process; all debugger,
+path, readiness, and graceful-close semantics remain backend concerns.
 
 ## 2. Selected language and SDK
 
@@ -301,6 +303,9 @@ does not wait indefinitely for all backends.
   summary. It contains no target memory or tool arguments.
 - `gateway.refresh`: requests discovery of all backends or one backend ID, subject
   to cooldown/coalescing, and returns a refresh ID plus per-backend scheduled state.
+- `gateway.backend_control`: invokes the selected backend's optional controller
+  once for `status`, `start`, `stop`, or `restart`. The command and fixed arguments
+  come only from configuration; callers cannot supply paths or arbitrary arguments.
 
 These names are reserved and cannot be shadowed by backend namespaces.
 
