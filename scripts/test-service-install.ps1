@@ -36,9 +36,18 @@ try {
     }
     try { Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$gatewayPort/mcp" -TimeoutSec 5 | Out-Null; throw 'Gateway accepted an unauthenticated request.' }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
-    & node (Join-Path $workspace 'scripts\probe-installed-service.mjs') "http://127.0.0.1:$gatewayPort/mcp" (Join-Path $dataRoot 'gateway.token')
-    if ($LASTEXITCODE -ne 0) { throw 'Service-to-user-agent integration probe failed.' }
+    $probeOutput = @(& node (Join-Path $workspace 'scripts\probe-installed-service.mjs') "http://127.0.0.1:$gatewayPort/mcp" (Join-Path $dataRoot 'gateway.token') 2>&1)
+    $probeExitCode = $LASTEXITCODE
+    $probeOutput | Write-Output
+    if ($probeExitCode -ne 0) { throw "Service-to-user-agent integration probe failed: $($probeOutput -join ' ')" }
     Write-Output 'real service and scheduled-task installation passed'
+} catch {
+    Write-Output "::error::$($_.Exception.Message)"
+    $diagnosticTask = Get-ScheduledTask -TaskName DynamicAnalysisMcpGatewayUserAgent -ErrorAction SilentlyContinue
+    $diagnosticTaskInfo = Get-ScheduledTaskInfo -TaskName DynamicAnalysisMcpGatewayUserAgent -ErrorAction SilentlyContinue
+    $diagnosticService = Get-Service DynamicAnalysisMcpGateway -ErrorAction SilentlyContinue
+    Write-Output "::notice::Service=$($diagnosticService.Status); task=$($diagnosticTask.State); taskResult=$($diagnosticTaskInfo.LastTaskResult); fallbackAgentExited=$($null -ne $agentProcess -and $agentProcess.HasExited)"
+    throw
 } finally {
     if ($null -ne $agentProcess -and !$agentProcess.HasExited) { $agentProcess.Kill() }
     & (Join-Path $workspace 'scripts\uninstall.ps1') -InstallRoot $installRoot -DataRoot $dataRoot -PurgeData -ErrorAction SilentlyContinue
