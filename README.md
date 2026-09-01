@@ -1,8 +1,11 @@
 # Dynamic Analysis MCP Gateway
 
-An authenticated MCP gateway for localhost x64dbg, x32dbg, and Cheat Engine MCP
-backends. Clients register one endpoint; backend tools are exposed with stable
-namespaces such as `x64dbg.debugger.state` and `ce.ce.status`.
+An authenticated MCP gateway for localhost dynamic-analysis backends.
+
+Supported backends:
+
+- [x64dbg-mcp-backend](https://github.com/a45s67/x64dbg-mcp-backend)
+- [CE-mcp-backend](https://github.com/a45s67/CE-mcp-backend)
 
 ## Windows installation
 
@@ -19,6 +22,9 @@ The installer reads the existing backend configurations, creates a boot-started
 Gateway service, and registers a per-user agent that starts at logon. It does not
 modify either backend installation.
 
+GUI lifecycle operations are available only while the installing user is logged
+in. The Gateway endpoint remains online when that user is logged out.
+
 Open a new terminal and register the public endpoint:
 
 ```powershell
@@ -31,21 +37,6 @@ Operational details and uninstall commands are in
 [`docs/service-with-user-agent.md`](docs/service-with-user-agent.md). Configuration
 and secret handling are described in
 [`docs/configuration.md`](docs/configuration.md).
-
-## Session behavior
-
-The Gateway endpoint remains online without a logged-in user. GUI lifecycle
-operations require the per-user agent:
-
-| State | Gateway | x64dbg/x32dbg lifecycle | CE |
-| --- | --- | --- | --- |
-| Owner logged out | Online | `USER_SESSION_UNAVAILABLE` | Discovered only if already reachable |
-| Owner logged in | Online | Runs on the visible desktop | Discovered after CE starts |
-
-Lifecycle requests are never queued for a later login. Use
-`gateway.backend_control` for `status`, `start`, `stop`, and `restart`.
-`gateway.debugger_restart` provides operation and instance identifiers for
-restart reconciliation.
 
 ## Development
 
