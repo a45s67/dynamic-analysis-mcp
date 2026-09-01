@@ -43,8 +43,22 @@ const diagnostic = rawDiagnostic.includes("USER_SESSION_UNAVAILABLE")
     ? "BACKEND_CONTROL_FAILED"
     : rawDiagnostic.includes("unexpected lifecycle probe result")
       ? "UNEXPECTED_LIFECYCLE_RESULT"
+      : /\b401\b|unauthorized/i.test(rawDiagnostic)
+        ? "HTTP_401"
+        : /\b403\b|forbidden/i.test(rawDiagnostic)
+          ? "HTTP_403"
+          : /\b404\b|not found/i.test(rawDiagnostic)
+            ? "HTTP_404"
+            : /\b5\d\d\b/.test(rawDiagnostic)
+              ? "HTTP_5XX"
+              : /ECONNREFUSED|fetch failed|socket|connect/i.test(rawDiagnostic)
+                ? "CONNECTION_ERROR"
+                : /JSON|protocol|parse|initialize|SSE/i.test(rawDiagnostic)
+                  ? "PROTOCOL_ERROR"
+                  : /timeout|timed out|abort/i.test(rawDiagnostic)
+                    ? "TIMEOUT"
       : rawDiagnostic === ""
         ? "UNKNOWN"
-        : "CLIENT_ERROR";
+                        : "OTHER_CLIENT_ERROR";
 process.stdout.write(`::error title=Service-to-user-agent probe::${diagnostic}\n`);
 process.exitCode = 1;
