@@ -8,7 +8,7 @@ $agentProcess = $null
 try {
     $xroot = Join-Path $root 'x64dbg'; $ceroot = Join-Path $root 'CE'
     New-Item -ItemType Directory -Force -Path (Join-Path $xroot 'release\mcp'),(Join-Path $ceroot 'mcp') | Out-Null
-    [IO.File]::WriteAllText((Join-Path $xroot 'release\mcp\x96dbg-mcp-control.exe'),'fixture')
+    Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\where.exe') -Destination (Join-Path $xroot 'release\mcp\x96dbg-mcp-control.exe')
     $token = 'debugger-token-abcdefghijklmnopqrstuvwxyz-0123456789'
     foreach ($entry in @(@('x32',43132),@('x64',43164))) { [IO.File]::WriteAllText((Join-Path $xroot "release\mcp\x64dbg-mcp-server-$($entry[0]).toml"),"bind = `"127.0.0.1`"`nport = $($entry[1])`nbearer_token = `"$token`"") }
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\config.json'),'{"transport":"streamable-http","host":"127.0.0.1","port":8001,"tokenFile":"http.token"}')
