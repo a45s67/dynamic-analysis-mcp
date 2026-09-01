@@ -47,4 +47,4 @@ const diagnostic = rawDiagnostic.includes("USER_SESSION_UNAVAILABLE")
         ? "UNKNOWN"
         : "CLIENT_ERROR";
 process.stdout.write(`::error title=Service-to-user-agent probe::${diagnostic}\n`);
-throw new Error("interactive user agent did not become reachable");
+process.exitCode = 1;

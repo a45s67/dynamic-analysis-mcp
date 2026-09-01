@@ -36,10 +36,9 @@ try {
     }
     try { Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$gatewayPort/mcp" -TimeoutSec 5 | Out-Null; throw 'Gateway accepted an unauthenticated request.' }
     catch { if ($_.Exception.Response.StatusCode.value__ -ne 401) { throw } }
-    $probeOutput = @(& node (Join-Path $workspace 'scripts\probe-installed-service.mjs') "http://127.0.0.1:$gatewayPort/mcp" (Join-Path $dataRoot 'gateway.token') 2>&1)
+    & node (Join-Path $workspace 'scripts\probe-installed-service.mjs') "http://127.0.0.1:$gatewayPort/mcp" (Join-Path $dataRoot 'gateway.token')
     $probeExitCode = $LASTEXITCODE
-    $probeOutput | Write-Output
-    if ($probeExitCode -ne 0) { throw "Service-to-user-agent integration probe failed: $($probeOutput -join ' ')" }
+    if ($probeExitCode -ne 0) { throw 'Service-to-user-agent integration probe failed.' }
     Write-Output 'real service and scheduled-task installation passed'
 } catch {
     Write-Output "::error::$($_.Exception.Message)"
