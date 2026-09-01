@@ -6,6 +6,7 @@ import type {
   DownstreamToolDefinition,
   DownstreamToolResult,
 } from "../domain/types.js";
+import { GATEWAY_VERSION } from "../version.js";
 
 export interface McpBackendClientOptions {
   readonly backendId: string;
@@ -23,7 +24,7 @@ export class McpBackendClient implements BackendClient {
   public static async connect(options: McpBackendClientOptions): Promise<McpBackendClient> {
     const client = new Client({
       name: `dynamic-analysis-mcp-gateway/${options.backendId}`,
-      version: "0.0.0",
+      version: GATEWAY_VERSION,
     });
     const transport = new StreamableHTTPClientTransport(options.url, {
       requestInit: {
@@ -52,4 +53,3 @@ export class McpBackendClient implements BackendClient {
     await this.#client.close();
   }
 }
-

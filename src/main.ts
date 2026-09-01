@@ -1,7 +1,9 @@
 import path from "node:path";
 
+import { startConfiguredUserAgent } from "./agent/entry.js";
 import { GatewayRuntime } from "./app/runtime.js";
 import { loadGatewayConfig } from "./config/loader.js";
+import { GATEWAY_VERSION } from "./version.js";
 
 interface CliOptions {
   readonly configFile: string;
@@ -46,9 +48,22 @@ function parseArgs(argumentsValue: readonly string[]): CliOptions {
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "--user-agent") {
+    const agent = await startConfiguredUserAgent(process.argv.slice(3));
+    process.stdout.write("interactive user agent ready\n");
+    let closing = false;
+    const closeAgent = (): void => {
+      if (closing) return;
+      closing = true;
+      void agent.close().then(() => process.exit(0)).catch(() => process.exit(1));
+    };
+    process.once("SIGINT", closeAgent);
+    process.once("SIGTERM", closeAgent);
+    return;
+  }
   const options = parseArgs(process.argv.slice(2));
   if (options.showVersion) {
-    process.stdout.write("dynamic-analysis-mcp-gateway 0.0.0\n");
+    process.stdout.write(`dynamic-analysis-mcp-gateway ${GATEWAY_VERSION}\n`);
     return;
   }
   const config = await loadGatewayConfig(options.configFile);

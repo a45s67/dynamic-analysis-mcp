@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 
+import { callUserAgent } from "../agent/protocol.js";
 import { McpBackendClient } from "../backend/mcp-client.js";
 import { runLifecycleCommand } from "../backend/lifecycle.js";
+import type { LifecycleAction, LifecycleExecution } from "../backend/lifecycle.js";
 import { CatalogPublisher } from "../catalog/catalog.js";
 import type { ResolvedGatewayConfig } from "../config/loader.js";
+import type { ResolvedBackendConfig } from "../config/loader.js";
 import type {
   BackendClient,
   BackendCatalogInput,
@@ -18,6 +21,7 @@ import type { ArgumentValidator, ManagementToolHandler } from "../router/router.
 import { startGatewayHttp } from "../server/http.js";
 import type { RunningGatewayHttpServer } from "../server/http.js";
 import { createGatewayMcpServer } from "../server/mcp-adapter.js";
+import { GATEWAY_VERSION } from "../version.js";
 
 interface BackendRuntimeState {
   readonly id: string;
@@ -83,14 +87,110 @@ export class GatewayRuntime {
     }
   }
 
+  #runLifecycle(
+    backend: ResolvedBackendConfig,
+    action: LifecycleAction,
+    force: boolean,
+    timeoutMs: number,
+  ): Promise<LifecycleExecution> {
+    if (this.#config.interactiveAgent !== undefined) {
+      if (backend.id !== "x32dbg" && backend.id !== "x64dbg") {
+        return Promise.resolve({
+          ok: false,
+          code: "PROCESS_FAILED",
+          message: "interactive lifecycle is unsupported for this backend",
+          dispatchStarted: false,
+          outcomeUnknown: false,
+        });
+      }
+      return callUserAgent({
+        pipeName: this.#config.interactiveAgent.pipeName,
+        token: this.#config.interactiveAgent.token,
+        backend: backend.id,
+        action,
+        force,
+        timeoutMs,
+      });
+    }
+    if (backend.lifecycle === undefined) {
+      return Promise.resolve({
+        ok: false,
+        code: "PROCESS_FAILED",
+        message: "backend lifecycle control is not configured",
+        dispatchStarted: false,
+        outcomeUnknown: false,
+      });
+    }
+    return runLifecycleCommand(
+      backend.lifecycle.command,
+      backend.lifecycle.args,
+      action,
+      force,
+      timeoutMs,
+    );
+  }
+
   public async start(): Promise<RunningGatewayHttpServer> {
-    if (this.#config.server.tls.mode !== "proxy") {
+    if (this.#config.server.tls.mode === "direct") {
       throw new Error("direct TLS listener support is not implemented yet");
     }
     await this.refresh();
     const management: ManagementToolHandler = {
       call: async (route, argumentsValue, captured, traceId) => {
         switch (route.managementName) {
+          case "gateway.backend_control": {
+            const keys = Object.keys(argumentsValue);
+            const backendId = argumentsValue.backendId;
+            const action = argumentsValue.action;
+            const force = argumentsValue.force ?? false;
+            if (
+              (backendId !== "x32dbg" && backendId !== "x64dbg") ||
+              (action !== "status" && action !== "start" && action !== "stop" && action !== "restart") ||
+              typeof force !== "boolean" ||
+              !keys.every((key) => key === "backendId" || key === "action" || key === "force") ||
+              (force && action !== "stop" && action !== "restart")
+            ) {
+              return { ok: false, error: { code: "INVALID_TOOL_ARGUMENTS",
+                message: "backendId, action, and optional force do not match the closed schema",
+                catalogGeneration: captured.generation, retryable: false, safeToRetry: false,
+                dispatchStarted: false, traceId } };
+            }
+            const backend = this.#config.backends.find(({ id }) => id === backendId);
+            if (backend?.enabled !== true ||
+              (backend.lifecycle === undefined && this.#config.interactiveAgent === undefined)) {
+              return { ok: false, error: { code: "BACKEND_CONTROL_FAILED",
+                message: "backend lifecycle control is not configured and enabled", backend: backendId,
+                catalogGeneration: captured.generation, retryable: false, safeToRetry: false,
+                dispatchStarted: false, traceId } };
+            }
+            if (this.#activeLifecycle.has(backendId)) {
+              return { ok: false, error: { code: "BACKEND_CONTROL_BUSY",
+                message: "another lifecycle operation is active for this backend", backend: backendId,
+                catalogGeneration: captured.generation, retryable: false, safeToRetry: false,
+                dispatchStarted: false, traceId } };
+            }
+            this.#activeLifecycle.add(backendId);
+            try {
+              const execution = await this.#runLifecycle(backend, action, force,
+                Math.max(1_000, Math.min(60_000, this.#config.limits.defaultToolTimeoutMs)));
+              if (!execution.ok) {
+                const readOnly = action === "status";
+                return { ok: false, error: {
+                  code: execution.code === "USER_SESSION_UNAVAILABLE"
+                    ? "USER_SESSION_UNAVAILABLE"
+                    : execution.outcomeUnknown && !readOnly ? "OUTCOME_UNKNOWN" : "BACKEND_CONTROL_FAILED",
+                  message: execution.message, backend: backendId,
+                  catalogGeneration: captured.generation, retryable: readOnly,
+                  safeToRetry: readOnly, dispatchStarted: execution.dispatchStarted, traceId,
+                } };
+              }
+              if (action !== "status") await this.refresh();
+              return success({ backendId, action, controller: execution.value,
+                catalogGeneration: this.#publisher.current().generation, traceId });
+            } finally {
+              this.#activeLifecycle.delete(backendId);
+            }
+          }
           case "gateway.debugger_restart": {
             const keys = Object.keys(argumentsValue);
             const backendId = argumentsValue.backendId;
@@ -178,7 +278,10 @@ export class GatewayRuntime {
               };
             }
             const backend = this.#config.backends.find(({ id }) => id === backendId);
-            if (backend?.enabled !== true || backend.lifecycle === undefined) {
+            if (
+              backend?.enabled !== true ||
+              (backend.lifecycle === undefined && this.#config.interactiveAgent === undefined)
+            ) {
               return {
                 ok: false,
                 error: {
@@ -216,9 +319,8 @@ export class GatewayRuntime {
               Math.min(50_000, this.#config.limits.defaultToolTimeoutMs * 2),
             );
             try {
-              const status = await runLifecycleCommand(
-                backend.lifecycle.command,
-                backend.lifecycle.args,
+              const status = await this.#runLifecycle(
+                backend,
                 "status",
                 false,
                 Math.min(5_000, restartTimeoutMs),
@@ -227,7 +329,10 @@ export class GatewayRuntime {
                 result = {
                   ok: false,
                   error: {
-                    code: "BACKEND_CONTROL_FAILED",
+                    code:
+                      status.code === "USER_SESSION_UNAVAILABLE"
+                        ? "USER_SESSION_UNAVAILABLE"
+                        : "BACKEND_CONTROL_FAILED",
                     message: status.message,
                     backend: backendId,
                     catalogGeneration: captured.generation,
@@ -267,18 +372,16 @@ export class GatewayRuntime {
                     },
                   };
                 } else {
-                  const execution = await runLifecycleCommand(
-                    backend.lifecycle.command,
-                    backend.lifecycle.args,
+                  const execution = await this.#runLifecycle(
+                    backend,
                     "restart",
                     true,
                     restartTimeoutMs,
                   );
                   if (!execution.ok) {
                     const reconciled = execution.outcomeUnknown
-                      ? await runLifecycleCommand(
-                          backend.lifecycle.command,
-                          backend.lifecycle.args,
+                      ? await this.#runLifecycle(
+                          backend,
                           "status",
                           false,
                           5_000,
@@ -306,9 +409,12 @@ export class GatewayRuntime {
                       result = {
                         ok: false,
                         error: {
-                          code: execution.outcomeUnknown
-                            ? "OUTCOME_UNKNOWN"
-                            : "BACKEND_CONTROL_FAILED",
+                          code:
+                            execution.code === "USER_SESSION_UNAVAILABLE"
+                              ? "USER_SESSION_UNAVAILABLE"
+                              : execution.outcomeUnknown
+                                ? "OUTCOME_UNKNOWN"
+                                : "BACKEND_CONTROL_FAILED",
                           message: execution.message,
                           backend: backendId,
                           catalogGeneration: captured.generation,
@@ -371,7 +477,7 @@ export class GatewayRuntime {
             });
           case "gateway.status":
             return success({
-              version: "0.0.0",
+              version: GATEWAY_VERSION,
               uptimeMs: Date.now() - this.#startedAt,
               catalogGeneration: captured.generation,
               catalogHash: captured.hash,

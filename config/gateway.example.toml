@@ -1,5 +1,10 @@
 version = 1
 
+# ServiceWithUserAgent deployments add this generated table:
+# [interactiveAgent]
+# pipeName = "dynamic-analysis-mcp-agent-OWNER_SID_HASH"
+# tokenEnv = "DYNAMIC_ANALYSIS_AGENT_TOKEN"
+
 [server]
 bind = "10.20.0.15"
 port = 8000
@@ -13,7 +18,7 @@ trustedProxyCidrs = ["10.20.0.1/32"]
 
 [x64dbg]
 enabled = true
-url = "http://127.0.0.1:8064/mcp"
+url = "http://127.0.0.1:43164/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
 # Optional host control stays flat in this existing backend table:
 # lifecycleCommand = 'C:\tools\x64dbg\release\mcp\x96dbg-mcp-control.exe'
@@ -25,7 +30,7 @@ mutationTools = ["debugger.resume", "debugger.pause", "memory.write"]
 
 [x32dbg]
 enabled = true
-url = "http://127.0.0.1:8032/mcp"
+url = "http://127.0.0.1:43132/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
 # lifecycleCommand = 'C:\tools\x64dbg\release\mcp\x96dbg-mcp-control.exe'
 # lifecycleArgs = ['--backend', 'x32', '--root', 'C:\tools\x64dbg']

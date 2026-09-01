@@ -10,7 +10,7 @@ export type LifecycleExecution =
   | { readonly ok: true; readonly value: Readonly<Record<string, JsonValue>> }
   | {
       readonly ok: false;
-      readonly code: "INVALID_OUTPUT" | "PROCESS_FAILED" | "TIMEOUT";
+      readonly code: "INVALID_OUTPUT" | "PROCESS_FAILED" | "TIMEOUT" | "USER_SESSION_UNAVAILABLE";
       readonly message: string;
       readonly dispatchStarted: boolean;
       readonly outcomeUnknown: boolean;

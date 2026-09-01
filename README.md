@@ -18,11 +18,28 @@ HTTP endpoint, and an official-SDK downstream HTTP client. Integration tests run
 an official MCP client through the Gateway into a second fake MCP HTTP server.
 
 Strict TOML configuration loading and the initial runtime discovery path are now
-implemented. Optional flat backend lifecycle commands and the bounded
-`gateway.debugger_restart` management tool are also implemented. Stateful
-upstream session tracking, catalog-change signaling,
-backend health thresholds, direct TLS, and installer/service packaging remain
+implemented. Bounded debugger restart orchestration can run directly or through
+an authenticated interactive user agent. Stateful upstream session tracking,
+catalog-change signaling, backend health thresholds, and direct TLS remain
 subsequent MVP phases.
+
+## Windows installation
+
+The Windows package supports an automatic service plus a scheduled interactive
+agent owned by the installing user:
+
+```powershell
+.\install.ps1 `
+  -Mode ServiceWithUserAgent `
+  -X64dbgRoot 'C:\tools\x64dbg' `
+  -CheatEngineRoot 'C:\tools\CE'
+```
+
+See [`docs/service-with-user-agent.md`](docs/service-with-user-agent.md) for
+session behavior, credential rotation, security boundaries, and uninstall.
+`gateway.backend_control` provides bounded `status`, `start`, `stop`, and
+`restart`; `gateway.debugger_restart` adds instance and operation identifiers for
+reconciliation-sensitive restart workflows.
 
 The configuration format and Windows secret layout are documented in
 [`docs/configuration.md`](docs/configuration.md). The single convention is a TOML

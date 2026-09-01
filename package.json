@@ -1,6 +1,6 @@
 {
   "name": "dynamic-analysis-mcp-gateway",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,6 +10,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:exe": "bun build src/main.ts --compile --target=bun-windows-x64 --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile dist/dynamic-analysis-mcp-gateway.exe",
+    "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "test:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-install.ps1",
+    "verify:package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-package.ps1",
     "check": "npm run typecheck && npm test",
     "check:config": "node dist/main.js --check-config",
     "start": "node dist/main.js",

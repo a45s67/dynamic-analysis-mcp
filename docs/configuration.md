@@ -42,11 +42,23 @@ All components should use the same environment-variable convention:
 - x32dbg: `X64DBG_MCP_TOKEN` (shared with x64dbg by the current backend contract)
 - Cheat Engine: `CE_MCP_TOKEN`
 
-x64dbg already accepts its environment variable. CE currently requires
-`--token-file`; it should add `CE_MCP_TOKEN` support before this convention is
-used end to end. A temporary CE launcher may read its existing token file and
-set `CE_MCP_TOKEN`, but the preferred final contract is native environment
-support in CE MCP.
+x64dbg and CE both accept their environment variables. The installer reads the
+effective backend credentials, writes ACL-restricted Gateway-owned service
+secrets, and the launcher injects only process-scoped variables. Persistent
+machine-wide token variables are not required. Run installer `-Reconfigure`
+after rotating a backend credential.
+
+Service deployments add a generated endpoint for the interactive agent:
+
+```toml
+[interactiveAgent]
+pipeName = "dynamic-analysis-mcp-agent-<owner-sid-hash>"
+tokenEnv = "DYNAMIC_ANALYSIS_AGENT_TOKEN"
+```
+
+When present, debugger lifecycle never executes directly in Session 0. It is
+delegated to the authenticated user agent and fails with
+`USER_SESSION_UNAVAILABLE` when the owner is not logged in.
 
 Changing the Gateway process environment requires a restart in the MVP.
 

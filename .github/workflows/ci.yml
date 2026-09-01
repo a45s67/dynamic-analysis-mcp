@@ -1,0 +1,40 @@
+name: CI
+permissions:
+  contents: write
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm run build:exe
+      - run: .\dist\dynamic-analysis-mcp-gateway.exe --version
+      - name: Installer contract
+        shell: powershell
+        run: .\scripts\test-install.ps1
+      - name: Build verified Windows package
+        shell: powershell
+        run: .\scripts\package.ps1
+      - name: Verify real service and user-agent task installation
+        shell: powershell
+        run: .\scripts\test-service-install.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dynamic-analysis-mcp-gateway-windows-x64
+          path: dist/dynamic-analysis-mcp-gateway-windows-x64.zip
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME .\dist\dynamic-analysis-mcp-gateway-windows-x64.zip --verify-tag --generate-notes

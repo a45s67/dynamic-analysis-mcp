@@ -39,6 +39,10 @@ export interface ResolvedGatewayConfig {
   readonly discovery: GatewayConfigFile["discovery"];
   readonly limits: GatewayConfigFile["limits"];
   readonly naming: GatewayConfigFile["naming"];
+  readonly interactiveAgent?: {
+    readonly pipeName: string;
+    readonly token: string;
+  };
 }
 
 async function readBoundedRegularFile(
@@ -147,5 +151,13 @@ export async function loadGatewayConfig(configFile: string): Promise<ResolvedGat
     discovery: Object.freeze(parsed.data.discovery),
     limits: Object.freeze(parsed.data.limits),
     naming: Object.freeze(parsed.data.naming),
+    ...(parsed.data.interactiveAgent === undefined
+      ? {}
+      : {
+          interactiveAgent: Object.freeze({
+            pipeName: parsed.data.interactiveAgent.pipeName,
+            token: resolveToken(parsed.data.interactiveAgent.tokenEnv, "interactiveAgent"),
+          }),
+        }),
   });
 }

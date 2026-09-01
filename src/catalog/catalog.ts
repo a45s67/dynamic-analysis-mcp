@@ -16,6 +16,22 @@ const RESERVED_BACKEND_TYPE = "gateway";
 
 const MANAGEMENT_TOOLS: readonly PublicToolDefinition[] = Object.freeze([
   Object.freeze({
+    name: "gateway.backend_control",
+    description: "Status, start, stop, or restart one x32dbg/x64dbg GUI host through the configured interactive user agent.",
+    inputSchema: Object.freeze({
+      type: "object",
+      required: ["backendId", "action"],
+      properties: Object.freeze({
+        backendId: Object.freeze({ enum: ["x32dbg", "x64dbg"] }),
+        action: Object.freeze({ enum: ["status", "start", "stop", "restart"] }),
+        force: Object.freeze({ type: "boolean" }),
+      }),
+      additionalProperties: false,
+    }),
+    annotations: Object.freeze({ readOnlyHint: false, destructiveHint: true,
+      idempotentHint: false, openWorldHint: false }),
+  }),
+  Object.freeze({
     name: "gateway.debugger_restart",
     description:
       "Restart one x32dbg or x64dbg host through its configured bounded controller after verifying the current backend instance.",
@@ -155,6 +171,7 @@ export function buildCatalog(
 
   for (const tool of MANAGEMENT_TOOLS) {
     const managementName = tool.name as
+      | "gateway.backend_control"
       | "gateway.debugger_restart"
       | "gateway.backends"
       | "gateway.refresh"
@@ -165,7 +182,7 @@ export function buildCatalog(
         routeKind: "management",
         managementName,
         safetyClass:
-          managementName === "gateway.refresh" || managementName === "gateway.debugger_restart"
+          managementName === "gateway.refresh" || managementName === "gateway.debugger_restart" || managementName === "gateway.backend_control"
             ? "mutation"
             : "read",
       }),

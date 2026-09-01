@@ -34,6 +34,7 @@ export interface BackendToolRoute {
 export interface ManagementToolRoute {
   readonly routeKind: "management";
   readonly managementName:
+    | "gateway.backend_control"
     | "gateway.debugger_restart"
     | "gateway.backends"
     | "gateway.refresh"
@@ -84,7 +85,8 @@ export interface GatewayToolError {
     | "INTERNAL_ERROR"
     | "INVALID_TOOL_ARGUMENTS"
     | "OUTCOME_UNKNOWN"
-    | "TOOL_NOT_FOUND";
+    | "TOOL_NOT_FOUND"
+    | "USER_SESSION_UNAVAILABLE";
   readonly message: string;
   readonly backend?: string;
   readonly catalogGeneration: number;

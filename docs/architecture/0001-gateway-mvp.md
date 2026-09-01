@@ -58,8 +58,8 @@ headers, body limits, and connection limits. It creates/tracks an MCP server
 session and delivers catalog-change signals to connected clients. No debugger or
 backend-specific behavior belongs here.
 
-The production listener may speak TLS directly or sit behind an explicitly
-trusted TLS reverse proxy. No other MCP endpoint is exposed. A non-MCP liveness
+The production listener may use bearer-protected loopback HTTP, speak TLS
+directly, or sit behind an explicitly trusted TLS reverse proxy. No other MCP endpoint is exposed. A non-MCP liveness
 probe may be added on the management interface but must reveal no backend or
 target details and is not required for MVP acceptance.
 
@@ -159,13 +159,13 @@ publicBaseUrl = "https://analysis-vm.example:8000"
 tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
 
 [server.tls]
-mode = "proxy" # proxy | direct
+mode = "proxy" # local | proxy | direct
 trustedProxyCidrs = ["10.20.0.1/32"]
 # certFile and keyFile are required instead when mode = "direct".
 
 [x64dbg]
 enabled = true
-url = "http://127.0.0.1:8064/mcp"
+url = "http://127.0.0.1:43164/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
 
 [x64dbg.safety]
@@ -174,7 +174,7 @@ mutationTools = ["debugger.resume", "memory.write"]
 
 [x32dbg]
 enabled = true
-url = "http://127.0.0.1:8032/mcp"
+url = "http://127.0.0.1:43132/mcp"
 tokenEnv = "X64DBG_MCP_TOKEN"
 
 [x32dbg.safety]
@@ -221,7 +221,8 @@ Required validation rules:
 - Backend URLs must use `http`, have hostname exactly `localhost`, `127.0.0.1`, or
   `[::1]`, contain no userinfo/query/fragment, and use the configured MCP path.
   Resolve/connect logic must not follow redirects to a non-loopback address.
-- `server.bind` must be an explicit management address, not a wildcard or loopback.
+- `server.bind` must never be a wildcard. Local mode requires loopback; proxy
+  and direct modes require an explicit non-loopback management address.
 - `tokenEnv` is required for the Gateway listener and every backend. Names use
   uppercase portable environment-variable syntax. Each variable must exist in
   the Gateway process environment and contain a bounded bearer credential.
@@ -229,7 +230,8 @@ Required validation rules:
   never returned by management tools or written to logs.
 - Production launch tooling supplies a service-scoped environment from its
   chosen secret store. The Gateway does not prescribe or own secret persistence.
-- TLS direct mode requires readable certificate/key paths. Proxy mode trusts
+- Local mode requires a loopback HTTP public base URL and bearer authentication.
+  TLS direct mode requires readable certificate/key paths. Proxy mode trusts
   forwarded identity only from configured proxy CIDRs.
 - All durations, counts, and sizes have implementation-defined safe min/max bounds.
 - A tool may not appear in both safety lists. Tools absent from both lists are

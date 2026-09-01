@@ -19,6 +19,7 @@ const ENVIRONMENT = {
   X64DBG_MCP_TOKEN: TOKENS.x64dbg,
   X32DBG_MCP_TOKEN: TOKENS.x32dbg,
   CE_MCP_TOKEN: TOKENS.ce,
+  DYNAMIC_ANALYSIS_AGENT_TOKEN: "agent-token-abcdefghijklmnopqrstuvwxyz-0123456789",
 } as const;
 const previousEnvironment = new Map<string, string | undefined>();
 
@@ -51,7 +52,7 @@ describe("strict TOML configuration", () => {
     expect(config.backends.map(({ id }) => id)).toEqual(["x64dbg", "x32dbg", "ce"]);
     expect(config.backends.find(({ id }) => id === "ce")?.bearerToken).toBe(TOKENS.ce);
     expect(config.backends.find(({ id }) => id === "x64dbg")?.url.href).toBe(
-      "http://127.0.0.1:8064/mcp",
+      "http://127.0.0.1:43164/mcp",
     );
     expect(config.backends.find(({ id }) => id === "ce")?.readOnlyTools.has("ce.status")).toBe(
       true,
@@ -82,9 +83,22 @@ describe("strict TOML configuration", () => {
   it("rejects non-loopback backend endpoints", async () => {
     const filename = path.join(fixtureRoot, "gateway.toml");
     const original = await readFile(filename, "utf8");
-    await writeFile(filename, original.replace("127.0.0.1:8064", "10.20.0.25:8064"));
+    await writeFile(filename, original.replace("127.0.0.1:43164", "10.20.0.25:43164"));
 
     await expect(loadGatewayConfig(filename)).rejects.toThrow(/x64dbg.url/);
+  });
+
+  it("accepts bearer-protected loopback local mode and rejects local mode on LAN", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    const local = original
+      .replace('bind = "10.20.0.15"', 'bind = "127.0.0.1"')
+      .replace('publicBaseUrl = "https://analysis-vm.example:8000"', 'publicBaseUrl = "http://127.0.0.1:8000"')
+      .replace('mode = "proxy"\ntrustedProxyCidrs = ["10.20.0.1/32"]', 'mode = "local"');
+    await writeFile(filename, local);
+    await expect(loadGatewayConfig(filename)).resolves.toMatchObject({ server: { bind: "127.0.0.1" } });
+    await writeFile(filename, local.replace('bind = "127.0.0.1"', 'bind = "10.20.0.15"'));
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/server.bind/);
   });
 
   it("rejects overlapping safety lists", async () => {
@@ -125,8 +139,8 @@ describe("strict TOML configuration", () => {
     await writeFile(
       filename,
       original.replace(
-        'url = "http://127.0.0.1:8064/mcp"',
-        `url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = '${literalPath}'\nlifecycleArgs = ['--backend', 'x64']`,
+        'url = "http://127.0.0.1:43164/mcp"',
+        `url = "http://127.0.0.1:43164/mcp"\nlifecycleCommand = '${literalPath}'\nlifecycleArgs = ['--backend', 'x64']`,
       ),
     );
 
@@ -137,14 +151,28 @@ describe("strict TOML configuration", () => {
     });
   });
 
+  it("loads a generated interactive user-agent endpoint", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    await writeFile(
+      filename,
+      `${original}\n[interactiveAgent]\npipeName = "dynamic-analysis-agent-test"\ntokenEnv = "DYNAMIC_ANALYSIS_AGENT_TOKEN"\n`,
+    );
+    const config = await loadGatewayConfig(filename);
+    expect(config.interactiveAgent).toEqual({
+      pipeName: "dynamic-analysis-agent-test",
+      token: ENVIRONMENT.DYNAMIC_ANALYSIS_AGENT_TOKEN,
+    });
+  });
+
   it("rejects incomplete or relative lifecycle configuration", async () => {
     const filename = path.join(fixtureRoot, "gateway.toml");
     const original = await readFile(filename, "utf8");
     await writeFile(
       filename,
       original.replace(
-        'url = "http://127.0.0.1:8064/mcp"',
-        'url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = "controller.exe"',
+        'url = "http://127.0.0.1:43164/mcp"',
+        'url = "http://127.0.0.1:43164/mcp"\nlifecycleCommand = "controller.exe"',
       ),
     );
     await expect(loadGatewayConfig(filename)).rejects.toThrow(/x64dbg/);
@@ -152,8 +180,8 @@ describe("strict TOML configuration", () => {
     await writeFile(
       filename,
       original.replace(
-        'url = "http://127.0.0.1:8064/mcp"',
-        'url = "http://127.0.0.1:8064/mcp"\nlifecycleCommand = "controller.exe"\nlifecycleArgs = []',
+        'url = "http://127.0.0.1:43164/mcp"',
+        'url = "http://127.0.0.1:43164/mcp"\nlifecycleCommand = "controller.exe"\nlifecycleArgs = []',
       ),
     );
     await expect(loadGatewayConfig(filename)).rejects.toThrow(/must be absolute/);

@@ -78,6 +78,8 @@ const DirectTlsSchema = z
   })
   .strict();
 
+const LocalTlsSchema = z.object({ mode: z.literal("local") }).strict();
+
 const ServerSchema = z
   .object({
     bind: z.string().min(1).max(64),
@@ -85,7 +87,7 @@ const ServerSchema = z
     path: z.literal("/mcp"),
     publicBaseUrl: z.url().max(2048),
     tokenEnv: TokenEnvSchema,
-    tls: z.discriminatedUnion("mode", [ProxyTlsSchema, DirectTlsSchema]),
+    tls: z.discriminatedUnion("mode", [LocalTlsSchema, ProxyTlsSchema, DirectTlsSchema]),
   })
   .strict();
 
@@ -96,6 +98,13 @@ export const GatewayConfigFileSchema = z
     x64dbg: BackendSchema,
     x32dbg: BackendSchema,
     ce: BackendSchema,
+    interactiveAgent: z
+      .object({
+        pipeName: z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/),
+        tokenEnv: TokenEnvSchema,
+      })
+      .strict()
+      .optional(),
     discovery: z
       .object({
         intervalMs: boundedInteger(500, 300_000),
@@ -127,25 +136,30 @@ export const GatewayConfigFileSchema = z
       context.addIssue({ code: "custom", path: ["server", "bind"], message: "must be an IP" });
     }
     const normalizedBind = value.server.bind.toLowerCase();
-    if (
-      normalizedBind === "0.0.0.0" ||
-      normalizedBind === "::" ||
-      normalizedBind === "::1" ||
-      normalizedBind.startsWith("127.")
-    ) {
+    const loopbackBind = normalizedBind === "::1" || normalizedBind.startsWith("127.");
+    if (normalizedBind === "0.0.0.0" || normalizedBind === "::") {
       context.addIssue({
         code: "custom",
         path: ["server", "bind"],
-        message: "must be an explicit non-loopback management address",
+        message: "must not be a wildcard address",
       });
+    }
+    if (value.server.tls.mode === "local" && !loopbackBind) {
+      context.addIssue({ code: "custom", path: ["server", "bind"], message: "local mode requires loopback" });
+    }
+    if (value.server.tls.mode !== "local" && loopbackBind) {
+      context.addIssue({ code: "custom", path: ["server", "bind"], message: "management mode requires non-loopback" });
     }
     try {
       const publicBaseUrl = new URL(value.server.publicBaseUrl);
-      if (publicBaseUrl.protocol !== "https:") {
+      const validPublicBase = value.server.tls.mode === "local"
+        ? publicBaseUrl.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(publicBaseUrl.hostname.toLowerCase())
+        : publicBaseUrl.protocol === "https:";
+      if (!validPublicBase) {
         context.addIssue({
           code: "custom",
           path: ["server", "publicBaseUrl"],
-          message: "must use HTTPS",
+          message: value.server.tls.mode === "local" ? "must be loopback HTTP in local mode" : "must use HTTPS",
         });
       }
     } catch {

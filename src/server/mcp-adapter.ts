@@ -3,6 +3,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/server";
 
 import type { CatalogSnapshot, GatewayCallResult, JsonValue } from "../domain/types.js";
 import type { ToolRouter } from "../router/router.js";
+import { GATEWAY_VERSION } from "../version.js";
 
 export interface CatalogSnapshotSource {
   current(): CatalogSnapshot;
@@ -39,7 +40,7 @@ export function createGatewayMcpServer(
   router: ToolRouter,
 ): Server {
   const server = new Server(
-    { name: "dynamic-analysis-mcp-gateway", version: "0.0.0" },
+    { name: "dynamic-analysis-mcp-gateway", version: GATEWAY_VERSION },
     {
       capabilities: { tools: { listChanged: false } },
       instructions:
@@ -63,4 +64,3 @@ export function createGatewayMcpServer(
 
   return server;
 }
-
