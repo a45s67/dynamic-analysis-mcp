@@ -1,7 +1,9 @@
 # ServiceWithUserAgent deployment
 
-This mode runs the stable MCP endpoint as an automatic Windows service and all
-interactive debugger lifecycle operations in a scheduled per-user agent.
+## Install
+
+Run `install.ps1` from an elevated PowerShell session owned by the Windows user
+who will run the GUI debuggers:
 
 ```powershell
 .\install.ps1 `
@@ -10,22 +12,21 @@ interactive debugger lifecycle operations in a scheduled per-user agent.
   -CheatEngineRoot 'C:\tools\CE'
 ```
 
-The installer derives ports and credential sources from the existing x32dbg,
-x64dbg, and CE configuration. It never modifies backend-owned files. The
-installer copies the effective credentials into Gateway-owned, ACL-restricted
-service secrets without modifying backend files. The service launcher injects
-them only into the Gateway process environment.
+The supplied roots must contain working backend configurations. The installer
+derives the x32dbg, x64dbg, and CE ports and credentials; backend files are read
+but never changed.
 
-The installation creates the automatic `DynamicAnalysisMcpGateway` WinSW
-service and a `DynamicAnalysisMcpGatewayUserAgent` task for the installing user
-SID. The generated Gateway profile is bearer-protected and loopback-only. The
-agent starts at interactive logon and uses an authenticated bounded named pipe.
-By default the installer also places the Gateway's public client credential in
-the owner's user-scoped `DYNAMIC_ANALYSIS_MCP_TOKEN`; use
-`-SkipClientEnvironment` when another client secret facility owns registration.
-Backend credentials are never placed in persistent environment variables.
+Installation creates:
 
-Open a new terminal and register only the public Gateway endpoint:
+- `DynamicAnalysisMcpGateway`, an automatic WinSW service;
+- `DynamicAnalysisMcpGatewayUserAgent`, an interactive-logon Scheduled Task for
+  the installing user SID;
+- `%ProgramData%\DynamicAnalysisMcpGateway`, containing Gateway configuration and
+  ACL-protected Gateway-owned credential copies; and
+- user-scoped `DYNAMIC_ANALYSIS_MCP_TOKEN`, unless
+  `-SkipClientEnvironment` is specified.
+
+Register only the Gateway endpoint after opening a new terminal:
 
 ```powershell
 codex mcp add dynamic-analysis `
@@ -33,24 +34,54 @@ codex mcp add dynamic-analysis `
   --bearer-token-env-var DYNAMIC_ANALYSIS_MCP_TOKEN
 ```
 
-Without that user session, the Gateway remains online while GUI backends are
-offline. `gateway.backend_control` and `gateway.debugger_restart` return
-`USER_SESSION_UNAVAILABLE` with `dispatchStarted: false`; requests are never
-queued for a future login. With the agent online, x32dbg/x64dbg lifecycle uses the installed
-`x96dbg-mcp-control.exe` on the visible desktop. CE is discovered after the user
-starts CE; CE host lifecycle control is not yet supported.
+## Runtime model
+
+The service runs as LocalSystem and owns the stable loopback MCP listener. The
+user agent runs only in the installing user's interactive session. An
+authenticated, bounded named pipe carries x32dbg/x64dbg lifecycle requests from
+the service to that agent.
+
+When the owner is logged out, the service remains online and lifecycle calls
+return `USER_SESSION_UNAVAILABLE` with `dispatchStarted: false`. Calls are not
+queued. After logon, lifecycle commands run through the installed
+`x96dbg-mcp-control.exe` on the visible desktop.
+
+CE is discovered when its MCP backend is reachable. The Gateway does not start
+or stop the CE GUI.
+
+## Reconfigure
+
+Run from the intended owner's elevated session after moving a backend, changing
+a backend port, or rotating a backend credential:
 
 ```powershell
-.\uninstall.ps1             # preserve Gateway data
-.\uninstall.ps1 -PurgeData  # also remove Gateway-owned credentials/config
+.\install.ps1 `
+  -Mode ServiceWithUserAgent `
+  -X64dbgRoot 'C:\tools\x64dbg' `
+  -CheatEngineRoot 'C:\tools\CE' `
+  -Reconfigure
 ```
 
-Backend installations are never removed. The release bundles the stable WinSW
-2.12.0 .NET 4.6.1 wrapper with SHA-256
-`B5066B7BBDFBA1293E5D15CDA3CAAEA88FBEAB35BD5B38C41C913D492AADFC4F`
-and its MIT license; packaging rejects any other binary.
+Reconfiguration replaces the generated service configuration, synchronizes the
+Gateway-owned credential copies, and restarts the service and user task.
 
-Rerun installation with `-Reconfigure` after moving a backend, changing an
-installed port, rotating a backend token, or selecting a new owner from that
-owner's elevated session. Reconfiguration synchronizes the Gateway-owned service
-secrets; restart the service afterward.
+## Uninstall
+
+```powershell
+.\uninstall.ps1
+.\uninstall.ps1 -PurgeData
+```
+
+The default removes the service, task, and installed binaries while preserving
+Gateway data. `-PurgeData` also removes Gateway configuration, Gateway-owned
+credentials, and the matching user-scoped client variable. Backend installations
+are never removed.
+
+## Security boundaries
+
+- The public listener and all backend endpoints are loopback-only.
+- Tokens do not appear in TOML, service XML, or command-line arguments.
+- The launcher injects tokens into the service process environment.
+- Backend credentials are not persisted as machine-wide environment variables.
+- Named-pipe requests accept only the closed lifecycle schema and fixed installed
+  controller paths.

@@ -1,32 +1,12 @@
 # Dynamic Analysis MCP Gateway
 
-One authenticated MCP endpoint federating independently usable localhost CE,
-x64dbg, and x32dbg MCP backends.
-
-The accepted MVP boundary is documented in
-[`docs/architecture/0001-gateway-mvp.md`](docs/architecture/0001-gateway-mvp.md).
-Observed backend naming differences and the preservation contract are documented
-in
-[`docs/contracts/backend-naming-compatibility.md`](docs/contracts/backend-naming-compatibility.md).
-
-## Development status
-
-The initial vertical slice implements deterministic backend namespace rewriting,
-conservative safety classification, canonical catalog hashing, immutable snapshot
-publication, snapshot-bound single-attempt routing, an authenticated Streamable
-HTTP endpoint, and an official-SDK downstream HTTP client. Integration tests run
-an official MCP client through the Gateway into a second fake MCP HTTP server.
-
-Strict TOML configuration loading and the initial runtime discovery path are now
-implemented. Bounded debugger restart orchestration can run directly or through
-an authenticated interactive user agent. Stateful upstream session tracking,
-catalog-change signaling, backend health thresholds, and direct TLS remain
-subsequent MVP phases.
+An authenticated MCP gateway for localhost x64dbg, x32dbg, and Cheat Engine MCP
+backends. Clients register one endpoint; backend tools are exposed with stable
+namespaces such as `x64dbg.debugger.state` and `ce.ce.status`.
 
 ## Windows installation
 
-The Windows package supports an automatic service plus a scheduled interactive
-agent owned by the installing user:
+Run from an elevated PowerShell session using the release package:
 
 ```powershell
 .\install.ps1 `
@@ -35,40 +15,59 @@ agent owned by the installing user:
   -CheatEngineRoot 'C:\tools\CE'
 ```
 
-See [`docs/service-with-user-agent.md`](docs/service-with-user-agent.md) for
-session behavior, credential rotation, security boundaries, and uninstall.
-`gateway.backend_control` provides bounded `status`, `start`, `stop`, and
-`restart`; `gateway.debugger_restart` adds instance and operation identifiers for
-reconciliation-sensitive restart workflows.
+The installer reads the existing backend configurations, creates a boot-started
+Gateway service, and registers a per-user agent that starts at logon. It does not
+modify either backend installation.
 
-The configuration format and Windows secret layout are documented in
-[`docs/configuration.md`](docs/configuration.md). The single convention is a TOML
-`tokenEnv` reference for each endpoint; tokens are never placed literally in
-TOML and the Gateway does not own backend secret storage.
+Open a new terminal and register the public endpoint:
 
-## Toolchain
+```powershell
+codex mcp add dynamic-analysis `
+  --url http://127.0.0.1:8000/mcp `
+  --bearer-token-env-var DYNAMIC_ANALYSIS_MCP_TOKEN
+```
 
-- Node.js 24.20.0 LTS
-- npm 11.19.0
-- TypeScript 6.0.2 in strict ESM mode
-- MCP TypeScript SDK v2 split packages
+Operational details and uninstall commands are in
+[`docs/service-with-user-agent.md`](docs/service-with-user-agent.md). Configuration
+and secret handling are described in
+[`docs/configuration.md`](docs/configuration.md).
 
-Install exactly the locked dependency graph and verify the current slice:
+## Session behavior
+
+The Gateway endpoint remains online without a logged-in user. GUI lifecycle
+operations require the per-user agent:
+
+| State | Gateway | x64dbg/x32dbg lifecycle | CE |
+| --- | --- | --- | --- |
+| Owner logged out | Online | `USER_SESSION_UNAVAILABLE` | Discovered only if already reachable |
+| Owner logged in | Online | Runs on the visible desktop | Discovered after CE starts |
+
+Lifecycle requests are never queued for a later login. Use
+`gateway.backend_control` for `status`, `start`, `stop`, and `restart`.
+`gateway.debugger_restart` provides operation and instance identifiers for
+restart reconciliation.
+
+## Development
+
+Requirements: Node.js 24.20.0, npm 11.19.0, and Bun for the self-contained
+Windows executable.
 
 ```powershell
 npm ci
 npm run check
 npm run build
-```
-
-Build the preferred self-contained Windows executable and perform a no-config
-startup check:
-
-```powershell
 npm run build:exe
-.\dist\dynamic-analysis-mcp-gateway.exe --version
+npm run test:install
+npm run package:windows
 ```
 
-The EXE does not embed configuration or secrets. At runtime it defaults to
-`%ProgramData%\DynamicAnalysisMcpGateway\gateway.toml`; use `--config <path>` to
-select another file or `--check-config` to validate it without listening.
+The executable defaults to
+`%ProgramData%\DynamicAnalysisMcpGateway\gateway.toml`. Use `--config <path>` to
+select another file, `--check-config` to validate configuration, or `--version`
+to print the version.
+
+## Reference
+
+- [Architecture](docs/architecture/0001-gateway-mvp.md)
+- [Backend naming compatibility](docs/contracts/backend-naming-compatibility.md)
+- [Debugger restart contract](docs/contracts/debugger-restart-v1.md)
