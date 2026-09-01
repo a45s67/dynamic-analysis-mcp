@@ -94,7 +94,7 @@ describe("strict TOML configuration", () => {
     const local = original
       .replace('bind = "10.20.0.15"', 'bind = "127.0.0.1"')
       .replace('publicBaseUrl = "https://analysis-vm.example:8000"', 'publicBaseUrl = "http://127.0.0.1:8000"')
-      .replace('mode = "proxy"\ntrustedProxyCidrs = ["10.20.0.1/32"]', 'mode = "local"');
+      .replace(/mode = "proxy"\r?\ntrustedProxyCidrs = \["10\.20\.0\.1\/32"\]/, 'mode = "local"');
     await writeFile(filename, local);
     await expect(loadGatewayConfig(filename)).resolves.toMatchObject({ server: { bind: "127.0.0.1" } });
     await writeFile(filename, local.replace('bind = "127.0.0.1"', 'bind = "10.20.0.15"'));
