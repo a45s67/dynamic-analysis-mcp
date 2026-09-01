@@ -36,4 +36,15 @@ while (Date.now() < deadline) {
   }
   await new Promise((resolve) => setTimeout(resolve, 500));
 }
-throw new Error(`interactive user agent did not become reachable: ${String(lastCode)}`);
+const rawDiagnostic = String(lastCode ?? "");
+const diagnostic = rawDiagnostic.includes("USER_SESSION_UNAVAILABLE")
+  ? "USER_SESSION_UNAVAILABLE"
+  : rawDiagnostic.includes("BACKEND_CONTROL_FAILED")
+    ? "BACKEND_CONTROL_FAILED"
+    : rawDiagnostic.includes("unexpected lifecycle probe result")
+      ? "UNEXPECTED_LIFECYCLE_RESULT"
+      : rawDiagnostic === ""
+        ? "UNKNOWN"
+        : "CLIENT_ERROR";
+process.stdout.write(`::error title=Service-to-user-agent probe::${diagnostic}\n`);
+throw new Error("interactive user agent did not become reachable");
