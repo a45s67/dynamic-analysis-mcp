@@ -112,7 +112,7 @@ export function runLifecycleCommand(
 ): Promise<LifecycleExecution> {
   return runLifecycleProcess(
     command,
-    lifecycleArguments(configuredArgs, action, force),
+    lifecycleArguments(configuredArgs, action, force, Math.max(1_000, timeoutMs - 1_000)),
     timeoutMs,
   );
 }
@@ -121,6 +121,13 @@ export function lifecycleArguments(
   configuredArgs: readonly string[],
   action: LifecycleAction,
   force: boolean,
+  timeoutMs: number,
 ): readonly string[] {
-  return [action, ...configuredArgs, ...(force ? ["--force"] : [])];
+  return [
+    action,
+    ...configuredArgs,
+    ...(force ? ["--force"] : []),
+    "--timeout-ms",
+    String(timeoutMs),
+  ];
 }

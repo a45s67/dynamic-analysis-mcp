@@ -55,8 +55,8 @@ describe("backend-compatible public names", () => {
 
     expect(snapshot.tools.map(({ name }) => name)).toEqual([
       "ce.ce.status",
-      "gateway.backend_control",
       "gateway.backends",
+      "gateway.debugger_restart",
       "gateway.refresh",
       "gateway.status",
       "x64dbg.debugger.state",
@@ -104,8 +104,8 @@ describe("catalog publication", () => {
   it("always exposes the reserved management catalog", () => {
     const snapshot = buildCatalog([], 0);
     expect(snapshot.tools.map(({ name }) => name)).toEqual([
-      "gateway.backend_control",
       "gateway.backends",
+      "gateway.debugger_restart",
       "gateway.refresh",
       "gateway.status",
     ]);
@@ -114,7 +114,7 @@ describe("catalog publication", () => {
       managementName: "gateway.refresh",
       safetyClass: "mutation",
     });
-    expect(snapshot.routes.get("gateway.backend_control")?.safetyClass).toBe("mutation");
+    expect(snapshot.routes.get("gateway.debugger_restart")?.safetyClass).toBe("mutation");
   });
 
   it("is deterministic across backend and tool ordering", () => {

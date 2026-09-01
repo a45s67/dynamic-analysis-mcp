@@ -34,7 +34,7 @@ export interface BackendToolRoute {
 export interface ManagementToolRoute {
   readonly routeKind: "management";
   readonly managementName:
-    | "gateway.backend_control"
+    | "gateway.debugger_restart"
     | "gateway.backends"
     | "gateway.refresh"
     | "gateway.status";
@@ -79,6 +79,8 @@ export interface GatewayToolError {
     | "BACKEND_UNAVAILABLE"
     | "BACKEND_CONTROL_BUSY"
     | "BACKEND_CONTROL_FAILED"
+    | "BACKEND_INSTANCE_CHANGED"
+    | "OPERATION_ID_CONFLICT"
     | "INTERNAL_ERROR"
     | "INVALID_TOOL_ARGUMENTS"
     | "OUTCOME_UNKNOWN"

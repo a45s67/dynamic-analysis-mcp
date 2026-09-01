@@ -303,7 +303,7 @@ does not wait indefinitely for all backends.
   summary. It contains no target memory or tool arguments.
 - `gateway.refresh`: requests discovery of all backends or one backend ID, subject
   to cooldown/coalescing, and returns a refresh ID plus per-backend scheduled state.
-- `gateway.backend_control`: invokes the selected backend's optional controller
+- `gateway.debugger_restart`: invokes the selected debugger backend's optional controller
   once for `status`, `start`, `stop`, or `restart`. The command and fixed arguments
   come only from configuration; callers cannot supply paths or arbitrary arguments.
 

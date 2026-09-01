@@ -50,8 +50,8 @@ support in CE MCP.
 
 Changing the Gateway process environment requires a restart in the MVP.
 
-`gateway.backend_control` accepts a configured `x32dbg` or `x64dbg` backend and
-one of `status`, `start`, `stop`, or `restart`. The Gateway executes the exact
-absolute command directly without a shell, appends the action before the fixed
-arguments, caps runtime and output, and permits only one active lifecycle call
-per backend. `force = true` is accepted only for `stop` and `restart`.
+`gateway.debugger_restart` accepts a configured `x32dbg` or `x64dbg` backend,
+the currently observed backend instance UUID, a fresh operation UUID, and
+optional `force`. The Gateway executes the exact absolute command directly
+without a shell, verifies the current instance, caps runtime and output, and
+permits only one active lifecycle call per backend.

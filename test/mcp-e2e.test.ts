@@ -234,8 +234,8 @@ describe("authenticated MCP vertical slice", () => {
     const listed = await client.listTools();
     expect(listed.tools.map(({ name }) => name)).toEqual([
       "ce.ce.process",
-      "gateway.backend_control",
       "gateway.backends",
+      "gateway.debugger_restart",
       "gateway.refresh",
       "gateway.status",
     ]);

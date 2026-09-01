@@ -4,13 +4,22 @@ import { lifecycleArguments, runLifecycleProcess } from "../src/index.js";
 
 describe("bounded backend lifecycle process", () => {
   it("builds the controller CLI without a shell command string", () => {
-    expect(lifecycleArguments(["--backend", "x64", "--root", "C:\\tools\\x64dbg"], "restart", true)).toEqual([
+    expect(
+      lifecycleArguments(
+        ["--backend", "x64", "--root", "C:\\tools\\x64dbg"],
+        "restart",
+        true,
+        29_000,
+      ),
+    ).toEqual([
       "restart",
       "--backend",
       "x64",
       "--root",
       "C:\\tools\\x64dbg",
       "--force",
+      "--timeout-ms",
+      "29000",
     ]);
   });
 
