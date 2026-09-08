@@ -77,18 +77,77 @@ try { $sha = $hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($sid)) } finally
 $sidHash = -join ($sha[0..7] | ForEach-Object { $_.ToString('x2') })
 $pipeName = "dynamic-analysis-mcp-agent-$sidHash"
 
-if ($PSCmdlet.ShouldProcess($InstallRoot, 'Install Dynamic Analysis MCP Gateway')) {
-    $existingService = Join-Path $InstallRoot 'DynamicAnalysisMcpGatewayService.exe'
-    if (!$SkipRegistration) {
-        Stop-ScheduledTask -TaskName 'DynamicAnalysisMcpGatewayUserAgent' -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $existingService -PathType Leaf) {
-            & $existingService stop 2>$null | Out-Null
-            & $existingService uninstall 2>$null | Out-Null
+function Copy-GatewayFile([string]$Source, [string]$Destination) {
+    # Windows can briefly retain an image mapping after a process has exited.
+    for ($attempt = 1; $attempt -le 40; $attempt++) {
+        try { Copy-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop; return }
+        catch {
+            $exception = $_.Exception
+            while ($exception.InnerException) { $exception = $exception.InnerException }
+            $code = $exception.HResult -band 0xffff
+            if ($code -notin @(32,33) -or $attempt -eq 40) { throw }
+            Start-Sleep -Milliseconds 250
         }
     }
+}
+
+function Stop-InstalledGateway {
+    $service = Get-CimInstance Win32_Service -Filter "Name='DynamicAnalysisMcpGateway'"
+    $task = Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq 'DynamicAnalysisMcpGatewayUserAgent'
+    # Validate both registrations before stopping either; names alone are not ownership.
+    if ($service -and $service.PathName.Trim().Trim('"') -ine $existingService) {
+        throw 'Gateway service belongs to another install path; refusing to replace it.'
+    }
+    if ($task) {
+        $owner = $task.Principal.UserId
+        if ($owner -notmatch '^S-1-') { $owner = ([Security.Principal.NTAccount]::new($owner)).Translate([Security.Principal.SecurityIdentifier]).Value }
+        if ($owner -ne $sid -or @($task.Actions).Count -ne 1 -or $task.Actions[0].Execute -ine $gatewayExe -or
+            $task.Actions[0].Arguments -notmatch ('^--user-agent --pipe-name "' + [regex]::Escape($pipeName) + '" ')) {
+            throw 'Gateway user task belongs to another install or owner; rerun as the installed owner.'
+        }
+    }
+    if ($service) {
+        Stop-Service -Name 'DynamicAnalysisMcpGateway' -ErrorAction Stop
+        (Get-Service -Name 'DynamicAnalysisMcpGateway').WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
+    if ($task) {
+        # Prevent a logon trigger from relaunching the agent during replacement.
+        Disable-ScheduledTask -InputObject $task | Out-Null
+        Stop-ScheduledTask -InputObject $task
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        do {
+            $running = @(Get-CimInstance Win32_Process -Filter "Name='dynamic-analysis-mcp-gateway.exe'" | Where-Object {
+                $_.ExecutablePath -ieq $gatewayExe -and $_.CommandLine -and
+                $_.CommandLine.EndsWith($task.Actions[0].Arguments, [StringComparison]::Ordinal)
+            })
+            foreach ($process in $running) {
+                $processOwner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
+                if ($processOwner.ReturnValue -ne 0 -or $processOwner.Sid -ne $sid) {
+                    throw 'Cannot confirm installed user-agent process ownership; refusing replacement.'
+                }
+                # Only the exact installed agent action under the owner SID is eligible.
+                $result = Invoke-CimMethod -InputObject $process -MethodName Terminate
+                if ($result.ReturnValue -notin @(0,9)) { throw 'Unable to stop installed user-agent process.' }
+            }
+            if ($running.Count -eq 0) { break }
+            if ([DateTime]::UtcNow -ge $deadline) { throw 'Timed out waiting for installed user agent to exit.' }
+            Start-Sleep -Milliseconds 250
+        } while ($true)
+    }
+    if ($service) {
+        & $existingService uninstall | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Gateway service uninstall failed; binaries were not replaced.' }
+    }
+}
+
+if ($PSCmdlet.ShouldProcess($InstallRoot, 'Install Dynamic Analysis MCP Gateway')) {
+    $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
+    $existingService = Join-Path $InstallRoot 'DynamicAnalysisMcpGatewayService.exe'
+    $gatewayExe = Join-Path $InstallRoot 'dynamic-analysis-mcp-gateway.exe'
+    if (!$SkipRegistration) { Stop-InstalledGateway }
     New-Item -ItemType Directory -Force -Path $InstallRoot,$DataRoot | Out-Null
-    Copy-Item -LiteralPath $gatewaySource -Destination (Join-Path $InstallRoot 'dynamic-analysis-mcp-gateway.exe') -Force
-    Copy-Item -LiteralPath $winswSource -Destination (Join-Path $InstallRoot 'DynamicAnalysisMcpGatewayService.exe') -Force
+    Copy-GatewayFile $gatewaySource $gatewayExe
+    Copy-GatewayFile $winswSource $existingService
     Copy-Item -LiteralPath $launcherSource -Destination (Join-Path $InstallRoot 'service-launch.ps1') -Force
     foreach ($secretName in @('gateway.token','agent.token')) {
         $secretPath = Join-Path $DataRoot $secretName
@@ -149,12 +208,14 @@ if ($PSCmdlet.ShouldProcess($InstallRoot, 'Install Dynamic Analysis MCP Gateway'
     }
     if (!$SkipRegistration) {
         & $serviceExe install
+        if ($LASTEXITCODE -ne 0) { throw 'Gateway service install failed.' }
         $agentArguments = "--user-agent --pipe-name `"$pipeName`" --agent-token-file `"$(Join-Path $DataRoot 'agent.token')`" --x64dbg-root `"$xRoot`""
         $action = New-ScheduledTaskAction -Execute $gatewayExe -Argument $agentArguments
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $sid
         $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
         Register-ScheduledTask -TaskName 'DynamicAnalysisMcpGatewayUserAgent' -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
         & $serviceExe start
+        if ($LASTEXITCODE -ne 0) { throw 'Gateway service start failed.' }
         Start-ScheduledTask -TaskName 'DynamicAnalysisMcpGatewayUserAgent'
         if (!$SkipClientEnvironment) {
             [Environment]::SetEnvironmentVariable('DYNAMIC_ANALYSIS_MCP_TOKEN',[IO.File]::ReadAllText((Join-Path $DataRoot 'gateway.token')),'User')

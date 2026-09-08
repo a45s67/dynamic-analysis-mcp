@@ -21,7 +21,9 @@ jobs:
       - run: .\dist\dynamic-analysis-mcp-gateway.exe --version
       - name: Installer contract
         shell: powershell
-        run: .\scripts\test-install.ps1
+        run: |
+          .\scripts\test-install-lifecycle.ps1
+          .\scripts\test-install.ps1
       - name: Build verified Windows package
         shell: powershell
         run: .\scripts\package.ps1

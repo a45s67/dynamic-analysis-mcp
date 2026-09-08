@@ -13,13 +13,17 @@ try {
     foreach ($entry in @(@('x32',43132),@('x64',43164))) { [IO.File]::WriteAllText((Join-Path $xroot "release\mcp\x64dbg-mcp-server-$($entry[0]).toml"),"bind = `"127.0.0.1`"`nport = $($entry[1])`nbearer_token = `"$token`"") }
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\config.json'),'{"transport":"streamable-http","host":"127.0.0.1","port":8001,"tokenFile":"http.token"}')
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\http.token'),'ce-token-abcdefghijklmnopqrstuvwxyz-0123456789')
+    $backendHashes = @(Get-ChildItem -LiteralPath $xroot,$ceroot -Recurse -File | Get-FileHash | Select-Object Path,Hash)
     $installRoot = Join-Path $root 'installed'; $dataRoot = Join-Path $root 'data'
     & (Join-Path $workspace 'scripts\install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -SkipRegistration
     $firstGatewayToken = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token'))
+    $firstAgentToken = [IO.File]::ReadAllText((Join-Path $dataRoot 'agent.token'))
+    $firstPipe = ([regex]::Match([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.toml')), '(?m)^pipeName = "([^"]+)"')).Value
     & (Join-Path $workspace 'scripts\install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -SkipRegistration -Reconfigure
     if ([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token')) -cne $firstGatewayToken) { throw 'reconfigure rotated the Gateway token' }
     $config = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.toml'))
     if ($config -notmatch '127\.0\.0\.1:43164/mcp' -or $config -notmatch 'mode = "local"' -or $config -notmatch '\[interactiveAgent\]') { throw 'generated Gateway configuration is invalid' }
+    if (!$config.Contains($firstPipe) -or [IO.File]::ReadAllText((Join-Path $dataRoot 'agent.token')) -cne $firstAgentToken) { throw 'reconfigure changed agent identity or token' }
     if ($config.Contains($token) -or $config.Contains('ce-token-abcdefghijklmnopqrstuvwxyz-0123456789')) { throw 'generated config contains a backend secret' }
     if ([IO.File]::ReadAllText((Join-Path $dataRoot 'x64dbg.token')) -cne $token) { throw 'x64dbg service secret was not synchronized' }
     $serviceXml = [IO.File]::ReadAllText((Join-Path $installRoot 'DynamicAnalysisMcpGatewayService.xml'))
@@ -44,6 +48,8 @@ try {
     $config = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.toml'))
     if ($config -notmatch 'bind = "127.0.0.1"' -or $config -notmatch 'mode = "local"') { throw 'omitted listener options did not restore defaults' }
     if ([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token')) -cne $suppliedToken) { throw 'omitted token option rotated token' }
+    $afterHashes = @(Get-ChildItem -LiteralPath $xroot,$ceroot -Recurse -File | Get-FileHash | Select-Object Path,Hash)
+    if (Compare-Object $backendHashes $afterHashes -Property Path,Hash) { throw 'installer mutated backend installations' }
     & (Join-Path $workspace 'scripts\uninstall.ps1') -InstallRoot $installRoot -DataRoot $dataRoot -SkipRegistration
     if (Test-Path $installRoot) { throw 'uninstall retained binaries' }
     if (!(Test-Path $dataRoot)) { throw 'uninstall removed data without PurgeData' }

@@ -105,6 +105,18 @@ a backend port, or rotating a backend credential:
 
 Reconfiguration replaces the generated service configuration, synchronizes the
 Gateway-owned credential copies, and restarts the service and user task.
+Before replacing binaries, the installer verifies the existing service executable
+path and user task action/owner SID. A different install path or owner is rejected
+without stopping either registration. Run upgrades as the original owner.
+The service is stopped first, then the task is disabled and stopped; any remaining
+agent process is stopped only when its executable, task arguments, and owner SID
+match. Debuggers and backend installations are not stopped or modified.
+If an upgrade fails after shutdown, the service may remain stopped/unregistered
+and the task disabled; correct the reported error and rerun the installer.
+Windows sharing/lock violations during binary replacement are retried for up to
+approximately ten seconds, then reported rather than killing other processes.
+`-SkipRegistration` does not stop or alter any services, tasks, or processes; it is
+intended for isolated package tests, not upgrades of a running registered Gateway.
 
 Every install, including `-Reconfigure`, regenerates configuration from that
 invocation's options; it does not merge the previous TOML. Repeat all listener

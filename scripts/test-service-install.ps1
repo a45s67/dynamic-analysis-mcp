@@ -5,6 +5,11 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('gateway-service-test-' + [guid]::
 $installRoot = Join-Path $root 'installed'; $dataRoot = Join-Path $root 'data'
 $gatewayPort = Get-Random -Minimum 20000 -Maximum 40000
 $agentProcess = $null
+# Fixed production registration names must only be exercised on an unused host.
+if ((Get-Service DynamicAnalysisMcpGateway -ErrorAction SilentlyContinue) -or
+    (Get-ScheduledTask -TaskPath '\' | Where-Object TaskName -eq 'DynamicAnalysisMcpGatewayUserAgent')) {
+    throw 'Service test requires a host without an installed Gateway service or user task.'
+}
 try {
     $xroot = Join-Path $root 'x64dbg'; $ceroot = Join-Path $root 'CE'
     New-Item -ItemType Directory -Force -Path (Join-Path $xroot 'release\mcp'),(Join-Path $ceroot 'mcp') | Out-Null
@@ -13,7 +18,7 @@ try {
     foreach ($entry in @(@('x32',43132),@('x64',43164))) { [IO.File]::WriteAllText((Join-Path $xroot "release\mcp\x64dbg-mcp-server-$($entry[0]).toml"),"bind = `"127.0.0.1`"`nport = $($entry[1])`nbearer_token = `"$token`"") }
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\config.json'),'{"transport":"streamable-http","host":"127.0.0.1","port":8001,"tokenFile":"http.token"}')
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\http.token'),'ce-token-abcdefghijklmnopqrstuvwxyz-0123456789')
-    & (Join-Path $package 'install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -GatewayPort $gatewayPort
+    & (Join-Path $package 'install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -GatewayPort $gatewayPort -SkipClientEnvironment
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do { Start-Sleep -Milliseconds 500; $service = Get-Service DynamicAnalysisMcpGateway -ErrorAction SilentlyContinue } while (($null -eq $service -or $service.Status -ne 'Running') -and [DateTime]::UtcNow -lt $deadline)
     if ($null -eq $service -or $service.Status -ne 'Running') { throw 'Gateway service did not reach Running.' }
@@ -39,6 +44,12 @@ try {
     & node (Join-Path $workspace 'scripts\probe-installed-service.mjs') "http://127.0.0.1:$gatewayPort/mcp" (Join-Path $dataRoot 'gateway.token')
     $probeExitCode = $LASTEXITCODE
     if ($probeExitCode -ne 0) { throw 'Service-to-user-agent integration probe failed.' }
+    $firstToken = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token'))
+    & (Join-Path $package 'install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -GatewayPort $gatewayPort -SkipClientEnvironment -Reconfigure
+    if ((Get-Service DynamicAnalysisMcpGateway).Status -ne 'Running') { throw 'Upgrade did not restart service.' }
+    if ([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token')) -cne $firstToken) { throw 'Upgrade rotated token.' }
+    $upgradedTask = Get-ScheduledTask -TaskName DynamicAnalysisMcpGatewayUserAgent
+    if ($upgradedTask.Principal.UserId -ne $agentTask.Principal.UserId -or !$upgradedTask.Settings.Enabled) { throw 'Upgrade changed owner or left task disabled.' }
     Write-Output 'real service and scheduled-task installation passed'
 } catch {
     Write-Output "::error::$($_.Exception.Message)"
