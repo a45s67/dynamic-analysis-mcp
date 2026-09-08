@@ -26,6 +26,24 @@ try {
     if ($serviceXml.Contains($token) -or $serviceXml.Contains('CE_MCP_TOKEN')) { throw 'service XML contains secret material' }
     [xml]$parsedService = $serviceXml
     if ($parsedService.service.id -ne 'DynamicAnalysisMcpGateway' -or $parsedService.service.startmode -ne 'Automatic') { throw 'service XML contract is invalid' }
+    $suppliedTokenFile = Join-Path $root 'supplied.token'
+    $suppliedToken = 'supplied-gateway-token-abcdefghijklmnopqrstuvwxyz-0123456789'
+    [IO.File]::WriteAllText($suppliedTokenFile, "$suppliedToken`r`n")
+    $options = @{ X64dbgRoot = $xroot; PackageRoot = $package; InstallRoot = $installRoot; DataRoot = $dataRoot; SkipRegistration = $true }
+    $rejected = $false
+    try { & (Join-Path $workspace 'scripts\install.ps1') @options -GatewayBind '0.0.0.0' } catch { $rejected = $true }
+    if (!$rejected) { throw 'wildcard binding accepted without opt-in' }
+    $output = & (Join-Path $workspace 'scripts\install.ps1') @options -GatewayBind '0.0.0.0' -GatewayPort 8000 -AllowBearerOnlyHttp -GatewayTokenFile $suppliedTokenFile -Reconfigure
+    if ($output -notcontains 'Gateway bind listener: http://0.0.0.0:8000/mcp' -or ($output -match 'codex mcp add')) { throw 'installer must report the bind listener without inventing a client URL' }
+    $config = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.toml'))
+    if ($config -notmatch 'bind = "0.0.0.0"' -or $config -notmatch 'mode = "bearer-only-http"' -or $config -notmatch '\[ce\]\r?\nenabled = false' -or $config.Contains('trustedProxyCidrs')) { throw 'LAN HTTP configuration is invalid' }
+    if (Test-Path (Join-Path $dataRoot 'ce.token')) { throw 'disabled CE retained credential copy' }
+    if ([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token')) -cne $suppliedToken) { throw 'supplied token was not installed' }
+    if ($config.Contains($suppliedToken)) { throw 'config contains supplied secret' }
+    & (Join-Path $workspace 'scripts\install.ps1') @options -Reconfigure
+    $config = [IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.toml'))
+    if ($config -notmatch 'bind = "127.0.0.1"' -or $config -notmatch 'mode = "local"') { throw 'omitted listener options did not restore defaults' }
+    if ([IO.File]::ReadAllText((Join-Path $dataRoot 'gateway.token')) -cne $suppliedToken) { throw 'omitted token option rotated token' }
     & (Join-Path $workspace 'scripts\uninstall.ps1') -InstallRoot $installRoot -DataRoot $dataRoot -SkipRegistration
     if (Test-Path $installRoot) { throw 'uninstall retained binaries' }
     if (!(Test-Path $dataRoot)) { throw 'uninstall removed data without PurgeData' }

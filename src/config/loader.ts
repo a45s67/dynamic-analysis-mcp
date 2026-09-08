@@ -114,7 +114,7 @@ export async function loadGatewayConfig(configFile: string): Promise<ResolvedGat
   const backends = await Promise.all(
     backendTypes.map(async (backendType): Promise<ResolvedBackendConfig> => {
       const backend = parsed.data[backendType];
-      const bearerToken = resolveToken(backend.tokenEnv, backendType);
+      const bearerToken = backend.enabled ? resolveToken(backend.tokenEnv, backendType) : "";
       let lifecycle: ResolvedBackendConfig["lifecycle"];
       if (backend.lifecycleCommand !== undefined && backend.lifecycleArgs !== undefined) {
         if (!path.isAbsolute(backend.lifecycleCommand)) {

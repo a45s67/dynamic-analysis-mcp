@@ -22,6 +22,11 @@ The installer reads the existing backend configurations, creates a boot-started
 Gateway service, and registers a per-user agent that starts at logon. It does not
 modify either backend installation.
 
+For debugger-only installations, omit `-CheatEngineRoot`. For the explicit
+`0.0.0.0:8000` bearer-only plaintext HTTP profile behind a transparent host proxy,
+see [single-machine LAN deployment](docs/service-with-user-agent.md#single-machine-lan-http).
+The default remains bearer-protected loopback HTTP.
+
 GUI lifecycle operations are available only while the installing user is logged
 in. The Gateway endpoint remains online when that user is logged out.
 

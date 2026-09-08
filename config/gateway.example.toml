@@ -9,7 +9,6 @@ version = 1
 bind = "10.20.0.15"
 port = 8000
 path = "/mcp"
-publicBaseUrl = "https://analysis-vm.example:8000"
 tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
 
 [server.tls]

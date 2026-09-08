@@ -19,7 +19,9 @@ function Read-OneLineSecret([string]$Path, [string]$Label) {
 $env:DYNAMIC_ANALYSIS_MCP_TOKEN = Read-OneLineSecret (Join-Path $DataRoot 'gateway.token') 'Gateway'
 $env:DYNAMIC_ANALYSIS_AGENT_TOKEN = Read-OneLineSecret (Join-Path $DataRoot 'agent.token') 'Agent'
 $env:X64DBG_MCP_TOKEN = Read-OneLineSecret (Join-Path $DataRoot 'x64dbg.token') 'x64dbg'
-$env:CE_MCP_TOKEN = Read-OneLineSecret (Join-Path $DataRoot 'ce.token') 'CE'
+$env:CE_MCP_TOKEN = if (Test-Path -LiteralPath (Join-Path $DataRoot 'ce.token')) {
+    Read-OneLineSecret (Join-Path $DataRoot 'ce.token') 'CE'
+} else { $null }
 try {
     & $GatewayExe --config $ConfigFile
     exit $LASTEXITCODE

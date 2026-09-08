@@ -79,15 +79,15 @@ const DirectTlsSchema = z
   .strict();
 
 const LocalTlsSchema = z.object({ mode: z.literal("local") }).strict();
+const BearerOnlyHttpSchema = z.object({ mode: z.literal("bearer-only-http") }).strict();
 
 const ServerSchema = z
   .object({
     bind: z.string().min(1).max(64),
     port: boundedInteger(1, 65_535),
     path: z.literal("/mcp"),
-    publicBaseUrl: z.url().max(2048),
     tokenEnv: TokenEnvSchema,
-    tls: z.discriminatedUnion("mode", [LocalTlsSchema, ProxyTlsSchema, DirectTlsSchema]),
+    tls: z.discriminatedUnion("mode", [LocalTlsSchema, BearerOnlyHttpSchema, ProxyTlsSchema, DirectTlsSchema]),
   })
   .strict();
 
@@ -137,7 +137,8 @@ export const GatewayConfigFileSchema = z
     }
     const normalizedBind = value.server.bind.toLowerCase();
     const loopbackBind = normalizedBind === "::1" || normalizedBind.startsWith("127.");
-    if (normalizedBind === "0.0.0.0" || normalizedBind === "::") {
+    const bearerOnlyHttp = value.server.tls.mode === "bearer-only-http";
+    if (!bearerOnlyHttp && (normalizedBind === "0.0.0.0" || normalizedBind === "::")) {
       context.addIssue({
         code: "custom",
         path: ["server", "bind"],
@@ -147,23 +148,8 @@ export const GatewayConfigFileSchema = z
     if (value.server.tls.mode === "local" && !loopbackBind) {
       context.addIssue({ code: "custom", path: ["server", "bind"], message: "local mode requires loopback" });
     }
-    if (value.server.tls.mode !== "local" && loopbackBind) {
+    if (value.server.tls.mode !== "local" && !bearerOnlyHttp && loopbackBind) {
       context.addIssue({ code: "custom", path: ["server", "bind"], message: "management mode requires non-loopback" });
-    }
-    try {
-      const publicBaseUrl = new URL(value.server.publicBaseUrl);
-      const validPublicBase = value.server.tls.mode === "local"
-        ? publicBaseUrl.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(publicBaseUrl.hostname.toLowerCase())
-        : publicBaseUrl.protocol === "https:";
-      if (!validPublicBase) {
-        context.addIssue({
-          code: "custom",
-          path: ["server", "publicBaseUrl"],
-          message: value.server.tls.mode === "local" ? "must be loopback HTTP in local mode" : "must use HTTPS",
-        });
-      }
-    } catch {
-      // z.url reports the primary issue.
     }
     for (const backendType of ["x64dbg", "x32dbg", "ce"] as const) {
       try {

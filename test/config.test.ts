@@ -93,12 +93,42 @@ describe("strict TOML configuration", () => {
     const original = await readFile(filename, "utf8");
     const local = original
       .replace('bind = "10.20.0.15"', 'bind = "127.0.0.1"')
-      .replace('publicBaseUrl = "https://analysis-vm.example:8000"', 'publicBaseUrl = "http://127.0.0.1:8000"')
       .replace(/mode = "proxy"\r?\ntrustedProxyCidrs = \["10\.20\.0\.1\/32"\]/, 'mode = "local"');
     await writeFile(filename, local);
     await expect(loadGatewayConfig(filename)).resolves.toMatchObject({ server: { bind: "127.0.0.1" } });
     await writeFile(filename, local.replace('bind = "127.0.0.1"', 'bind = "10.20.0.15"'));
     await expect(loadGatewayConfig(filename)).rejects.toThrow(/server.bind/);
+  });
+
+  it.each(["0.0.0.0", "::", "10.20.0.15"])("allows explicit bearer-only HTTP on %s without proxy trust", async (bind) => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    const lan = original
+      .replace('bind = "10.20.0.15"', `bind = "${bind}"`)
+      .replace(/mode = "proxy"\r?\ntrustedProxyCidrs = \["10\.20\.0\.1\/32"\]/, 'mode = "bearer-only-http"');
+    await writeFile(filename, lan);
+    await expect(loadGatewayConfig(filename)).resolves.toMatchObject({ server: { bind, bearerToken: TOKENS.gateway } });
+    await writeFile(filename, lan.replace('mode = "bearer-only-http"', 'mode = "local"'));
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/server.bind/);
+    await writeFile(filename, lan);
+    delete process.env.DYNAMIC_ANALYSIS_MCP_TOKEN;
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/server token environment variable is unavailable/);
+  });
+
+  it("keeps wildcard binding forbidden in proxy mode", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    await writeFile(filename, original.replace('bind = "10.20.0.15"', 'bind = "0.0.0.0"'));
+    await expect(loadGatewayConfig(filename)).rejects.toThrow(/server.bind/);
+  });
+
+  it("does not require credentials for disabled CE", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    await writeFile(filename, original.replace(/\[ce\]\r?\nenabled = true/, "[ce]\nenabled = false"));
+    delete process.env.CE_MCP_TOKEN;
+    const config = await loadGatewayConfig(filename);
+    expect(config.backends.find(({ id }) => id === "ce")).toMatchObject({ enabled: false, bearerToken: "" });
   });
 
   it("rejects overlapping safety lists", async () => {

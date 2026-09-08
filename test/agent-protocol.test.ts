@@ -113,7 +113,6 @@ describe("service-to-user-agent protocol", () => {
       sourceFile: "fixture.toml",
       server: {
         bind: "127.0.0.1", port: 0, path: "/mcp",
-        publicBaseUrl: "http://127.0.0.1:8000",
         bearerToken: "gateway-token-abcdefghijklmnopqrstuvwxyz-0123456789",
         tls: { mode: "local" },
       },

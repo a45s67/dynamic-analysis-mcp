@@ -62,7 +62,6 @@ The installed profile is bearer-protected and loopback-only:
 bind = "127.0.0.1"
 port = 8000
 path = "/mcp"
-publicBaseUrl = "http://127.0.0.1:8000"
 tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
 
 [server.tls]
@@ -71,3 +70,33 @@ mode = "local"
 
 Use proxy TLS mode only behind a configured trusted reverse proxy. Direct TLS
 listener mode is rejected by the runtime.
+
+## Opt-in LAN HTTP
+
+For a single DBG VM with a transparent host proxy, explicitly select plaintext
+HTTP with bearer authentication. No orchestrator or trusted-proxy headers are
+required. Backend URLs must still be loopback HTTP; authentication is mandatory.
+
+```toml
+[server]
+bind = "0.0.0.0"
+port = 8000
+path = "/mcp"
+tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
+
+[server.tls]
+mode = "bearer-only-http"
+```
+
+Configure the MCP client's URL with the reachable host proxy address and `/mcp`. The
+proxy must forward `/mcp` and `Authorization` unchanged and support MCP streaming.
+This mode does not require or trust forwarded identity headers or proxy CIDRs.
+Wildcard listeners are accepted only in this explicit mode. The installer still
+defaults to loopback `local` mode. Disabled backends need no token environment
+variable.
+
+HTTP exposes tokens, requests, and results to network observers and permits
+in-transit modification. Anyone holding the token can invoke exposed debugger
+tools. Restrict both VM and host ingress to the intended management host/client
+addresses with firewalls; do not expose this mode to the Internet or untrusted
+LANs. A transparent proxy does not add encryption or authentication.
