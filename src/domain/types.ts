@@ -83,6 +83,7 @@ export interface GatewayToolError {
     | "BACKEND_INSTANCE_CHANGED"
     | "OPERATION_ID_CONFLICT"
     | "INTERNAL_ERROR"
+    | "EXECUTION_CAPACITY"
     | "INVALID_TOOL_ARGUMENTS"
     | "OUTCOME_UNKNOWN"
     | "TOOL_NOT_FOUND"

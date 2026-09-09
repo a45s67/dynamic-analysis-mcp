@@ -247,6 +247,12 @@ export function buildCatalog(
 
 export class CatalogPublisher {
   #snapshot: CatalogSnapshot = buildCatalog([], 0);
+  readonly #listeners = new Set<() => void>();
+
+  public subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => { this.#listeners.delete(listener); };
+  }
 
   public current(): CatalogSnapshot {
     return this.#snapshot;
@@ -258,6 +264,10 @@ export class CatalogPublisher {
       return this.#snapshot;
     }
     this.#snapshot = candidate;
+    for (const listener of this.#listeners) {
+      // A disconnected subscriber must never interrupt discovery/publication.
+      try { listener(); } catch { /* Subscriber isolation. */ }
+    }
     return candidate;
   }
 }

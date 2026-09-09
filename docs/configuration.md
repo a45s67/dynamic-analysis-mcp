@@ -90,6 +90,10 @@ mode = "bearer-only-http"
 
 Configure the MCP client's URL with the reachable host proxy address and `/mcp`. The
 proxy must forward `/mcp` and `Authorization` unchanged and support MCP streaming.
+It must also forward `Mcp-Session-Id` and `MCP-Protocol-Version`, support
+GET/POST/DELETE, and avoid buffering the standalone GET/SSE notification stream.
+See [session lifecycle and tool-list notifications](architecture/0002-tool-list-notifications.md)
+for bounds and the one-time reinitialization required after upgrading.
 This mode does not require or trust forwarded identity headers or proxy CIDRs.
 Wildcard listeners are accepted only in this explicit mode. The installer still
 defaults to loopback `local` mode. Disabled backends need no token environment

@@ -512,18 +512,18 @@ export class GatewayRuntime {
       },
     };
     const router = new ToolRouter({
+      maxConcurrentCalls: this.#config.limits.globalConcurrentCalls,
       clients: this.#clients,
       validator: new PublishedSchemaValidator(),
       management,
       traceIds: { next: () => randomUUID() },
     });
-    const mcpServer = createGatewayMcpServer(this.#publisher, router);
     this.#http = await startGatewayHttp({
       host: this.#config.server.bind,
       port: this.#config.server.port,
       path: this.#config.server.path,
       bearerToken: this.#config.server.bearerToken,
-      mcpServer,
+      createMcpServer: () => createGatewayMcpServer(this.#publisher, router),
     });
     return this.#http;
   }

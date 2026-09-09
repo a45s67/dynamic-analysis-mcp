@@ -147,7 +147,7 @@ describe("authenticated MCP vertical slice", () => {
       port: 0,
       path: "/mcp",
       bearerToken: TOKEN,
-      mcpServer: gatewayProtocol,
+      createMcpServer: () => gatewayProtocol,
     });
     running.push(gateway);
 
@@ -222,7 +222,7 @@ describe("authenticated MCP vertical slice", () => {
       port: 0,
       path: "/mcp",
       bearerToken: TOKEN,
-      mcpServer: protocol,
+      createMcpServer: () => protocol,
     });
     running.push(http);
 
@@ -281,7 +281,7 @@ describe("authenticated MCP vertical slice", () => {
       port: 0,
       path: "/mcp",
       bearerToken: TOKEN,
-      mcpServer: protocol,
+      createMcpServer: () => protocol,
     });
     running.push(http);
 
