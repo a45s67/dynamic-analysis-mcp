@@ -110,9 +110,13 @@ export function runLifecycleCommand(
   force: boolean,
   timeoutMs: number,
 ): Promise<LifecycleExecution> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 2 || timeoutMs > 2_147_483_647) {
+    return Promise.resolve({ ok: false, code: "TIMEOUT", message: "invalid or insufficient lifecycle deadline",
+      dispatchStarted: false, outcomeUnknown: false });
+  }
   return runLifecycleProcess(
     command,
-    lifecycleArguments(configuredArgs, action, force, Math.max(1_000, timeoutMs - 1_000)),
+    lifecycleArguments(configuredArgs, action, force, timeoutMs - Math.min(1_000, Math.ceil(timeoutMs / 10))),
     timeoutMs,
   );
 }

@@ -121,13 +121,18 @@ function Stop-InstalledGateway {
                 $_.CommandLine.EndsWith($task.Actions[0].Arguments, [StringComparison]::Ordinal)
             })
             foreach ($process in $running) {
-                $processOwner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
-                if ($processOwner.ReturnValue -ne 0 -or $processOwner.Sid -ne $sid) {
-                    throw 'Cannot confirm installed user-agent process ownership; refusing replacement.'
+                try {
+                    $processOwner = Invoke-CimMethod -InputObject $process -MethodName GetOwnerSid
+                    if ($processOwner.ReturnValue -ne 0 -or $processOwner.Sid -ne $sid) {
+                        throw 'Cannot confirm installed user-agent process ownership; refusing replacement.'
+                    }
+                    # Only the exact installed agent action under the owner SID is eligible.
+                    $result = Invoke-CimMethod -InputObject $process -MethodName Terminate
+                    if ($result.ReturnValue -notin @(0,9)) { throw 'Unable to stop installed user-agent process.' }
+                } catch [Microsoft.Management.Infrastructure.CimException] {
+                    # The stopped task can exit between enumeration and either CIM call.
+                    if ($_.Exception.NativeErrorCode -ne [Microsoft.Management.Infrastructure.NativeErrorCode]::NotFound) { throw }
                 }
-                # Only the exact installed agent action under the owner SID is eligible.
-                $result = Invoke-CimMethod -InputObject $process -MethodName Terminate
-                if ($result.ReturnValue -notin @(0,9)) { throw 'Unable to stop installed user-agent process.' }
             }
             if ($running.Count -eq 0) { break }
             if ([DateTime]::UtcNow -ge $deadline) { throw 'Timed out waiting for installed user agent to exit.' }
@@ -193,7 +198,8 @@ if ($PSCmdlet.ShouldProcess($InstallRoot, 'Install Dynamic Analysis MCP Gateway'
 "@
     [IO.File]::WriteAllText((Join-Path $InstallRoot 'DynamicAnalysisMcpGatewayService.xml'), $xml)
     if (!$SkipRegistration) {
-        icacls $DataRoot /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "${sid}:(OI)(CI)R" | Out-Null
+        icacls $DataRoot /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F" "*${sid}:(OI)(CI)R" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Gateway data directory ACL configuration failed.' }
     }
     $env:DYNAMIC_ANALYSIS_MCP_TOKEN = [IO.File]::ReadAllText((Join-Path $DataRoot 'gateway.token'))
     $env:DYNAMIC_ANALYSIS_AGENT_TOKEN = [IO.File]::ReadAllText((Join-Path $DataRoot 'agent.token'))
@@ -216,6 +222,8 @@ if ($PSCmdlet.ShouldProcess($InstallRoot, 'Install Dynamic Analysis MCP Gateway'
         Register-ScheduledTask -TaskName 'DynamicAnalysisMcpGatewayUserAgent' -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
         & $serviceExe start
         if ($LASTEXITCODE -ne 0) { throw 'Gateway service start failed.' }
+        # WinSW can return successfully while SCM still reports StartPending.
+        (Get-Service -Name 'DynamicAnalysisMcpGateway').WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
         Start-ScheduledTask -TaskName 'DynamicAnalysisMcpGatewayUserAgent'
         if (!$SkipClientEnvironment) {
             [Environment]::SetEnvironmentVariable('DYNAMIC_ANALYSIS_MCP_TOKEN',[IO.File]::ReadAllText((Join-Path $DataRoot 'gateway.token')),'User')

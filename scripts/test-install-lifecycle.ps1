@@ -28,6 +28,10 @@ function Disable-ScheduledTask { param($InputObject) $script:events.Add('task-di
 function Stop-ScheduledTask { param($InputObject) $script:events.Add('task-stop') }
 function Invoke-CimMethod {
     param($InputObject, $MethodName)
+    if ($script:cimFailure -and $MethodName -eq $script:cimFailureMethod) {
+        $script:processes = @()
+        throw $script:cimFailure
+    }
     if ($MethodName -eq 'GetOwnerSid') { return @{ ReturnValue = 0; Sid = $script:processOwnerSid } }
     $script:events.Add("terminate-$($InputObject.ProcessId)")
     $script:processes = @($script:processes | Where-Object ProcessId -ne $InputObject.ProcessId)
@@ -67,6 +71,23 @@ $script:processOwnerSid = 'S-1-5-21-999'
 $script:processes = @([pscustomobject]@{ ProcessId = 4; ExecutablePath = $gatewayExe; CommandLine = '"' + $gatewayExe + '" ' + $arguments })
 Assert-Rejected
 if (($script:events -join ',') -ne 'task-disable,task-stop' -or $script:processes.Count -ne 1) { throw 'Foreign process owner was terminated' }
+
+# Obtain a real missing-instance error without starting or stopping a process.
+$missingProcess = New-CimInstance -ClassName Win32_Process -Namespace root/cimv2 -ClientOnly -Key Handle -Property @{ Handle = '4294967295' }
+$notFound = $null
+try { CimCmdlets\Invoke-CimMethod -InputObject $missingProcess -MethodName GetOwnerSid -ErrorAction Stop }
+catch [Microsoft.Management.Infrastructure.CimException] { $notFound = $_.Exception }
+if (!$notFound -or $notFound.NativeErrorCode -ne [Microsoft.Management.Infrastructure.NativeErrorCode]::NotFound) { throw 'Missing-process CIM fixture did not return NotFound' }
+$script:processOwnerSid = $sid
+foreach ($failure in @($notFound, [Microsoft.Management.Infrastructure.CimException]::new('other CIM failure'))) {
+    $script:cimFailure = $failure
+    foreach ($method in @('GetOwnerSid','Terminate')) {
+        $script:cimFailureMethod = $method
+        $script:processes = @([pscustomobject]@{ ProcessId = 5; ExecutablePath = $gatewayExe; CommandLine = '"' + $gatewayExe + '" ' + $arguments })
+        if ($failure.NativeErrorCode -eq [Microsoft.Management.Infrastructure.NativeErrorCode]::NotFound) { Stop-InstalledGateway } else { Assert-Rejected }
+    }
+}
+$script:cimFailure = $null
 
 # Exercise real Windows sharing violations, including a persistent lock and a non-lock error.
 $root = Join-Path ([IO.Path]::GetTempPath()) ('gateway-copy-test-' + [guid]::NewGuid().ToString('N'))

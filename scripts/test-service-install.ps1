@@ -19,6 +19,13 @@ try {
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\config.json'),'{"transport":"streamable-http","host":"127.0.0.1","port":8001,"tokenFile":"http.token"}')
     [IO.File]::WriteAllText((Join-Path $ceroot 'mcp\http.token'),'ce-token-abcdefghijklmnopqrstuvwxyz-0123456789')
     & (Join-Path $package 'install.ps1') -X64dbgRoot $xroot -CheatEngineRoot $ceroot -PackageRoot $package -InstallRoot $installRoot -DataRoot $dataRoot -GatewayPort $gatewayPort -SkipClientEnvironment
+    $dataAcl = Get-Acl -LiteralPath $dataRoot
+    $ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $ownerRead = @($dataAcl.GetAccessRules($true, $false, [Security.Principal.SecurityIdentifier]) | Where-Object {
+        $_.IdentityReference.Value -eq $ownerSid -and $_.AccessControlType -eq 'Allow' -and
+        ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Read) -eq [Security.AccessControl.FileSystemRights]::Read
+    })
+    if (!$dataAcl.AreAccessRulesProtected -or $ownerRead.Count -ne 1) { throw 'Gateway data ACL did not disable inheritance and grant owner read access.' }
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do { Start-Sleep -Milliseconds 500; $service = Get-Service DynamicAnalysisMcpGateway -ErrorAction SilentlyContinue } while (($null -eq $service -or $service.Status -ne 'Running') -and [DateTime]::UtcNow -lt $deadline)
     if ($null -eq $service -or $service.Status -ne 'Running') { throw 'Gateway service did not reach Running.' }
