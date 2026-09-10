@@ -184,6 +184,7 @@ describe("authenticated MCP vertical slice", () => {
       sourceFile: "fixture.toml",
       server: {
         bind: "127.0.0.1", port: 0, path: "/mcp", bearerToken: TOKEN,
+        uploadRoot: String.raw`C:\analysis\sandbox`,
         tls: { mode: "local" },
       },
       backends: [{

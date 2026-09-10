@@ -49,6 +49,7 @@ describe("strict TOML configuration", () => {
     const config = await loadGatewayConfig(path.join(fixtureRoot, "gateway.toml"));
 
     expect(config.server.bearerToken).toBe(TOKENS.gateway);
+    expect(config.server.uploadRoot).toBe(String.raw`C:\analysis\sandbox`);
     expect(config.backends.map(({ id }) => id)).toEqual(["x64dbg", "x32dbg", "ce"]);
     expect(config.backends.find(({ id }) => id === "ce")?.bearerToken).toBe(TOKENS.ce);
     expect(config.backends.find(({ id }) => id === "x64dbg")?.url.href).toBe(
@@ -57,6 +58,21 @@ describe("strict TOML configuration", () => {
     expect(config.backends.find(({ id }) => id === "ce")?.readOnlyTools.has("ce.status")).toBe(
       true,
     );
+  });
+
+  it("resolves an explicit upload root", async () => {
+    const filename = path.join(fixtureRoot, "gateway.toml");
+    const original = await readFile(filename, "utf8");
+    await writeFile(
+      filename,
+      original.replace(
+        'tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"',
+        'tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"\nuploadRoot = \'D:\\samples\\incoming\'',
+      ),
+    );
+
+    const config = await loadGatewayConfig(filename);
+    expect(config.server.uploadRoot).toBe(String.raw`D:\samples\incoming`);
   });
 
   it("rejects unknown keys, including literal token and tokenFile", async () => {

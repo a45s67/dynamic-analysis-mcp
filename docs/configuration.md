@@ -71,6 +71,21 @@ mode = "local"
 Use proxy TLS mode only behind a configured trusted reverse proxy. Direct TLS
 listener mode is rejected by the runtime.
 
+## Raw uploads
+
+The listener also accepts `POST /upload` with the same bearer token used by
+`/mcp`. Set the fixed destination directory with the optional server field
+`uploadRoot`; it defaults to `C:\analysis\sandbox` when omitted:
+
+```toml
+[server]
+uploadRoot = 'D:\samples\incoming'
+```
+
+Uploads require `X-Filename`, `X-Content-SHA256`, and a positive
+`Content-Length`. Files are limited to 64 MiB, and an existing destination is
+never overwritten.
+
 ## Opt-in LAN HTTP
 
 For a single DBG VM with a transparent host proxy, explicitly select plaintext
