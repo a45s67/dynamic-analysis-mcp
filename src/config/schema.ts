@@ -87,6 +87,12 @@ const ServerSchema = z
     port: boundedInteger(1, 65_535),
     path: z.literal("/mcp"),
     tokenEnv: TokenEnvSchema,
+    uploadRoot: z
+      .string()
+      .min(1)
+      .max(32_767)
+      .regex(/^[^\u0000-\u001f\u007f]+$/, "uploadRoot must not contain control characters")
+      .optional(),
     tls: z.discriminatedUnion("mode", [LocalTlsSchema, BearerOnlyHttpSchema, ProxyTlsSchema, DirectTlsSchema]),
   })
   .strict();

@@ -10,6 +10,8 @@ bind = "10.20.0.15"
 port = 8000
 path = "/mcp"
 tokenEnv = "DYNAMIC_ANALYSIS_MCP_TOKEN"
+# Optional; defaults to 'C:\analysis\sandbox'.
+# uploadRoot = 'D:\samples\incoming'
 
 [server.tls]
 mode = "proxy"

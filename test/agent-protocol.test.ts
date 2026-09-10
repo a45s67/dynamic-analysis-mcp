@@ -351,6 +351,7 @@ describe("service-to-user-agent protocol", () => {
       server: {
         bind: "127.0.0.1", port: 0, path: "/mcp",
         bearerToken: "gateway-token-abcdefghijklmnopqrstuvwxyz-0123456789",
+        uploadRoot: String.raw`C:\analysis\sandbox`,
         tls: { mode: "local" },
       },
       backends: [{

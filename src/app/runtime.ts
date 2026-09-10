@@ -528,6 +528,7 @@ export class GatewayRuntime {
       port: this.#config.server.port,
       path: this.#config.server.path,
       bearerToken: this.#config.server.bearerToken,
+      uploadRoot: this.#config.server.uploadRoot,
       createMcpServer: () => createGatewayMcpServer(this.#publisher, router),
     });
     return this.#http;

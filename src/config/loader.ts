@@ -32,8 +32,9 @@ export interface ResolvedBackendConfig {
 
 export interface ResolvedGatewayConfig {
   readonly sourceFile: string;
-  readonly server: Omit<GatewayConfigFile["server"], "tokenEnv"> & {
+  readonly server: Omit<GatewayConfigFile["server"], "tokenEnv" | "uploadRoot"> & {
     readonly bearerToken: string;
+    readonly uploadRoot: string;
   };
   readonly backends: readonly ResolvedBackendConfig[];
   readonly discovery: GatewayConfigFile["discovery"];
@@ -143,10 +144,14 @@ export async function loadGatewayConfig(configFile: string): Promise<ResolvedGat
       });
     }),
   );
-  const { tokenEnv: _tokenEnv, ...serverWithoutTokenEnv } = parsed.data.server;
+  const { tokenEnv: _tokenEnv, uploadRoot, ...serverWithoutSecrets } = parsed.data.server;
   return Object.freeze({
     sourceFile: absoluteConfigFile,
-    server: Object.freeze({ ...serverWithoutTokenEnv, bearerToken: serverToken }),
+    server: Object.freeze({
+      ...serverWithoutSecrets,
+      bearerToken: serverToken,
+      uploadRoot: uploadRoot ?? String.raw`C:\analysis\sandbox`,
+    }),
     backends: Object.freeze(backends),
     discovery: Object.freeze(parsed.data.discovery),
     limits: Object.freeze(parsed.data.limits),

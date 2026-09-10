@@ -1,7 +1,9 @@
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { link, mkdir, open, unlink } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import type { GatewayMcpServer } from "./mcp-adapter.js";
 
@@ -11,6 +13,7 @@ export interface GatewayHttpOptions {
   readonly path: "/mcp";
   readonly bearerToken: string;
   readonly createMcpServer: () => GatewayMcpServer;
+  readonly uploadRoot?: string;
   /** Embedding/test overrides; production uses the bounded defaults below. */
   readonly maxSessions?: number;
   readonly sessionIdleMs?: number;
@@ -32,6 +35,20 @@ interface Session {
   sse?: ServerResponse | undefined;
 }
 
+const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+const DEFAULT_UPLOAD_ROOT = String.raw`C:\analysis\sandbox`;
+const SAFE_FILENAME = /^[A-Za-z0-9._-]{1,255}$/u;
+const SHA256 = /^[0-9a-f]{64}$/u;
+
+class UploadError extends Error {
+  public constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(code);
+  }
+}
+
 function authorized(header: string | undefined, expectedToken: string): boolean {
   const supplied = Buffer.from(header?.startsWith("Bearer ") === true ? header.slice(7) : "", "utf8");
   const expected = Buffer.from(expectedToken, "utf8");
@@ -45,6 +62,71 @@ function authorized(header: string | undefined, expectedToken: string): boolean 
 function reject(response: ServerResponse, status: number, code: string): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify({ code }));
+}
+
+async function upload(
+  request: IncomingMessage,
+  response: ServerResponse,
+  configuredRoot: string,
+): Promise<void> {
+  const filename = request.headers["x-filename"];
+  if (typeof filename !== "string" || !SAFE_FILENAME.test(filename) || filename === "." || filename === "..") {
+    throw new UploadError(400, "INVALID_FILENAME");
+  }
+  const expectedHash = request.headers["x-content-sha256"];
+  if (typeof expectedHash !== "string" || !SHA256.test(expectedHash)) {
+    throw new UploadError(400, "INVALID_SHA256");
+  }
+  const contentLength = request.headers["content-length"];
+  if (typeof contentLength !== "string" || !/^[0-9]+$/u.test(contentLength)) {
+    throw new UploadError(400, "INVALID_CONTENT_LENGTH");
+  }
+  const expectedBytes = Number(contentLength);
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 1) {
+    throw new UploadError(400, "INVALID_CONTENT_LENGTH");
+  }
+  if (expectedBytes > MAX_UPLOAD_BYTES) throw new UploadError(413, "UPLOAD_TOO_LARGE");
+
+  const root = path.resolve(configuredRoot);
+  const destination = path.join(root, filename);
+  const temporary = path.join(root, `.upload-${randomUUID()}.tmp`);
+  await mkdir(root, { recursive: true });
+  const file = await open(temporary, "wx", 0o600);
+  let bytes = 0;
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.from(chunk as Uint8Array);
+      bytes += buffer.length;
+      if (bytes > expectedBytes || bytes > MAX_UPLOAD_BYTES) {
+        throw new UploadError(413, "UPLOAD_TOO_LARGE");
+      }
+      hash.update(buffer);
+      let offset = 0;
+      while (offset < buffer.length) {
+        const written = await file.write(buffer, offset, buffer.length - offset, null);
+        offset += written.bytesWritten;
+      }
+    }
+    if (!request.complete || bytes !== expectedBytes) throw new UploadError(400, "TRUNCATED_UPLOAD");
+    const actualHash = hash.digest("hex");
+    if (actualHash !== expectedHash) throw new UploadError(400, "HASH_MISMATCH");
+    await file.sync();
+    await file.close();
+    try {
+      await link(temporary, destination);
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new UploadError(409, "DESTINATION_EXISTS");
+      }
+      throw error;
+    }
+    response.writeHead(201, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ path: destination, size: bytes, sha256: actualHash }));
+  } finally {
+    await file.close().catch(() => undefined);
+    await unlink(temporary).catch(() => undefined);
+  }
 }
 
 async function body(request: IncomingMessage): Promise<unknown> {
@@ -66,6 +148,7 @@ export async function startGatewayHttp(options: GatewayHttpOptions): Promise<Run
   if (options.bearerToken.length < 32) throw new Error("Gateway bearer token must contain at least 32 characters");
   const maxSessions = options.maxSessions ?? 32;
   const idleMs = options.sessionIdleMs ?? 15 * 60_000;
+  const uploadRoot = options.uploadRoot ?? DEFAULT_UPLOAD_ROOT;
   if (!Number.isSafeInteger(maxSessions) || maxSessions < 1 || maxSessions > 32 ||
       !Number.isSafeInteger(idleMs) || idleMs < 50 || idleMs > 15 * 60_000) {
     throw new Error("Invalid HTTP session limits");
@@ -93,13 +176,34 @@ export async function startGatewayHttp(options: GatewayHttpOptions): Promise<Run
     let post = false;
     let deadline: ReturnType<typeof setTimeout> | undefined;
     try {
-      if (new URL(request.url ?? "/", "http://gateway.invalid").pathname !== options.path) {
+      const requestPath = new URL(request.url ?? "/", "http://gateway.invalid").pathname;
+      if (requestPath !== options.path && requestPath !== "/upload") {
         reject(response, 404, "NOT_FOUND"); return;
       }
-      // Authentication precedes session lookup on every POST, GET and DELETE.
+      // Authentication precedes body consumption and session lookup on every route.
       if (!authorized(request.headers.authorization, options.bearerToken)) {
         response.setHeader("www-authenticate", "Bearer");
         reject(response, 401, "UNAUTHENTICATED"); return;
+      }
+      if (requestPath === "/upload") {
+        if (request.method !== "POST") {
+          response.setHeader("allow", "POST");
+          reject(response, 405, "METHOD_NOT_ALLOWED"); return;
+        }
+        if (closing || requests >= 128) { reject(response, 503, "HTTP_CAPACITY"); return; }
+        requests++;
+        response.once("close", () => { requests--; });
+        try {
+          await upload(request, response, uploadRoot);
+        } catch (error: unknown) {
+          if (error instanceof UploadError) {
+            if (!request.complete) response.setHeader("connection", "close");
+            reject(response, error.status, error.code);
+          } else {
+            throw error;
+          }
+        }
+        return;
       }
       if (closing || requests >= 128) { reject(response, 503, "HTTP_CAPACITY"); return; }
       if (!["POST", "GET", "DELETE"].includes(request.method ?? "")) {
