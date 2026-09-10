@@ -14,11 +14,18 @@ export interface McpBackendClientOptions {
   readonly bearerToken: string;
 }
 
+export interface DownstreamServerInfo {
+  readonly name: string;
+  readonly version: string;
+}
+
 export class McpBackendClient implements BackendClient {
   readonly #client: Client;
+  public readonly serverInfo: DownstreamServerInfo | undefined;
 
-  private constructor(client: Client) {
+  private constructor(client: Client, serverInfo: DownstreamServerInfo | undefined) {
     this.#client = client;
+    this.serverInfo = serverInfo;
   }
 
   public static async connect(options: McpBackendClientOptions): Promise<McpBackendClient> {
@@ -33,7 +40,13 @@ export class McpBackendClient implements BackendClient {
       },
     });
     await client.connect(transport);
-    return new McpBackendClient(client);
+    const serverInfo = client.getServerVersion();
+    return new McpBackendClient(
+      client,
+      serverInfo === undefined
+        ? undefined
+        : { name: serverInfo.name, version: serverInfo.version },
+    );
   }
 
   public async listTools(): Promise<readonly DownstreamToolDefinition[]> {

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCatalog,
   createGatewayMcpServer,
+  GatewayRuntime,
   McpBackendClient,
   startGatewayHttp,
   ToolRouter,
@@ -18,6 +19,7 @@ import type {
   GatewayCallResult,
   ManagementToolHandler,
   RunningGatewayHttpServer,
+  ResolvedGatewayConfig,
   TraceIdSource,
 } from "../src/index.js";
 
@@ -33,9 +35,11 @@ afterEach(async () => {
 async function startFakeMcpBackend(
   token: string,
   calls: unknown[],
+  version = "1.0.0",
+  port = 0,
 ): Promise<{ readonly url: URL; close(): Promise<void> }> {
   const protocol = new Server(
-    { name: "fake-ce-mcp-backend", version: "1.0.0" },
+    { name: "fake-ce-mcp-backend", version },
     { capabilities: { tools: { listChanged: false } } },
   );
   protocol.setRequestHandler("tools/list", async () => ({
@@ -87,13 +91,14 @@ async function startFakeMcpBackend(
   });
   await new Promise<void>((resolve, reject) => {
     http.once("error", reject);
-    http.listen(0, "127.0.0.1", () => resolve());
+    http.listen(port, "127.0.0.1", () => resolve());
   });
   const address = http.address() as AddressInfo;
   return {
     url: new URL(`http://127.0.0.1:${address.port}/mcp`),
     close: async () => {
       await protocol.close();
+      http.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         http.close((error) => (error === undefined ? resolve() : reject(error)));
       });
@@ -116,6 +121,10 @@ describe("authenticated MCP vertical slice", () => {
       await fakeBackend.close();
     });
     const tools = await backendClient.listTools();
+    expect(backendClient.serverInfo).toEqual({
+      name: "fake-ce-mcp-backend",
+      version: "1.0.0",
+    });
     const snapshot = buildCatalog(
       [
         {
@@ -166,6 +175,66 @@ describe("authenticated MCP vertical slice", () => {
     expect(result.structuredContent).toEqual({ sessionId: "live-ce-session", generation: 11 });
     expect(backendCalls).toEqual([{ name: "ce.status", arguments: {} }]);
     await upstreamClient.close();
+  });
+
+  it("reports current downstream server identity without stale offline data", async () => {
+    const backendToken = "backend-test-token-32-characters-long";
+    let fakeBackend = await startFakeMcpBackend(backendToken, []);
+    const config: ResolvedGatewayConfig = {
+      sourceFile: "fixture.toml",
+      server: {
+        bind: "127.0.0.1", port: 0, path: "/mcp", bearerToken: TOKEN,
+        tls: { mode: "local" },
+      },
+      backends: [{
+        id: "ce", type: "ce", enabled: true, url: fakeBackend.url,
+        bearerToken: backendToken, readOnlyTools: new Set(["ce.status"]),
+        mutationTools: new Set(),
+      }],
+      discovery: { intervalMs: 5000, connectTimeoutMs: 100, listTimeoutMs: 100,
+        stableSuccesses: 1, stableFailures: 1, jitterPercent: 0 },
+      limits: { requestBodyBytes: 1048576, downstreamCatalogBytes: 1048576,
+        downstreamToolCount: 500, downstreamToolDefinitionBytes: 65536,
+        toolResultBytes: 1048576, globalConcurrentCalls: 4, perBackendConcurrentCalls: 1,
+        defaultToolTimeoutMs: 1000, refreshCooldownMs: 100 },
+      naming: { mode: "dotted" },
+    };
+    const runtime = new GatewayRuntime(config);
+    const client = new Client({ name: "backend-version-test", version: "1.0.0" });
+    try {
+      const http = await runtime.start();
+      await client.connect(new StreamableHTTPClientTransport(http.url, { requestInit: {
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      } }));
+      const ready = await client.callTool({ name: "gateway.backends", arguments: {} });
+      expect(ready.structuredContent).toMatchObject({ backends: [{
+        id: "ce", state: "ready", toolCount: 1,
+        serverInfo: { name: "fake-ce-mcp-backend", version: "1.0.0" },
+      }] });
+
+      await fakeBackend.close();
+      await runtime.refresh();
+      const offline = await client.callTool({ name: "gateway.backends", arguments: {} });
+      expect(offline.structuredContent).toMatchObject({ backends: [{
+        id: "ce", state: "offline", toolCount: 0, diagnosticCode: "CONNECT_FAILED",
+      }] });
+      expect((offline.structuredContent as { backends: object[] }).backends[0]).not.toHaveProperty("serverInfo");
+
+      fakeBackend = await startFakeMcpBackend(
+        backendToken, [], "2.0.0", Number(config.backends[0]!.url.port),
+      );
+      await runtime.refresh();
+      const refreshed = await client.callTool({ name: "gateway.backends", arguments: {} });
+      expect(refreshed.structuredContent).toMatchObject({ backends: [{
+        id: "ce", state: "ready", toolCount: 1,
+        serverInfo: { name: "fake-ce-mcp-backend", version: "2.0.0" },
+      }] });
+      expect((refreshed.structuredContent as { backends: object[] }).backends[0]).not.toHaveProperty("diagnosticCode");
+    } finally {
+      await client.close().catch(() => undefined);
+      await runtime.close();
+      await fakeBackend.close().catch(() => undefined);
+    }
   });
 
   it("lists and calls a namespaced CE tool through the official client", async () => {

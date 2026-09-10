@@ -28,6 +28,10 @@ interface BackendRuntimeState {
   readonly type: string;
   readonly state: "disabled" | "offline" | "ready";
   readonly toolCount: number;
+  readonly serverInfo?: {
+    readonly name: string;
+    readonly version: string;
+  };
   readonly diagnosticCode?: "CONNECT_FAILED";
 }
 
@@ -468,6 +472,7 @@ export class GatewayRuntime {
                 type: backend.type,
                 state: backend.state,
                 toolCount: backend.toolCount,
+                ...(backend.serverInfo === undefined ? {} : { serverInfo: backend.serverInfo }),
                 ...(backend.diagnosticCode === undefined
                   ? {}
                   : { diagnosticCode: backend.diagnosticCode }),
@@ -541,64 +546,71 @@ export class GatewayRuntime {
 
   async #performRefresh(): Promise<void> {
     const nextClients = new Map<string, McpBackendClient>();
+    const nextStates = new Map<string, BackendRuntimeState>();
     const catalogs: BackendCatalogInput[] = [];
-    await Promise.all(
-      this.#config.backends.map(async (backend) => {
-        if (!backend.enabled) {
-          this.#backendStates.set(backend.id, {
-            id: backend.id,
-            type: backend.type,
-            state: "disabled",
-            toolCount: 0,
-          });
-          return;
-        }
-        try {
-          const client = await McpBackendClient.connect({
-            backendId: backend.id,
-            url: backend.url,
-            bearerToken: backend.bearerToken,
-          });
-          const tools: readonly DownstreamToolDefinition[] = await client.listTools();
-          nextClients.set(backend.id, client);
-          catalogs.push({
-            backendId: backend.id,
-            backendType: backend.type,
-            tools,
-            readOnlyTools: backend.readOnlyTools,
-            mutationTools: backend.mutationTools,
-          });
-          this.#backendStates.set(backend.id, {
-            id: backend.id,
-            type: backend.type,
-            state: "ready",
-            toolCount: tools.length,
-          });
-        } catch {
-          this.#backendStates.set(backend.id, {
-            id: backend.id,
-            type: backend.type,
-            state: "offline",
-            toolCount: 0,
-            diagnosticCode: "CONNECT_FAILED",
-          });
-        }
-      }),
-    );
-    catalogs.sort((left, right) =>
-      left.backendType < right.backendType ? -1 : left.backendType > right.backendType ? 1 : 0,
-    );
-    this.#publisher.publish(catalogs);
+    try {
+      await Promise.all(
+        this.#config.backends.map(async (backend) => {
+          if (!backend.enabled) {
+            nextStates.set(backend.id, {
+              id: backend.id,
+              type: backend.type,
+              state: "disabled",
+              toolCount: 0,
+            });
+            return;
+          }
+          let client: McpBackendClient | undefined;
+          try {
+            client = await McpBackendClient.connect({
+              backendId: backend.id,
+              url: backend.url,
+              bearerToken: backend.bearerToken,
+            });
+            const tools: readonly DownstreamToolDefinition[] = await client.listTools();
+            nextClients.set(backend.id, client);
+            catalogs.push({
+              backendId: backend.id,
+              backendType: backend.type,
+              tools,
+              readOnlyTools: backend.readOnlyTools,
+              mutationTools: backend.mutationTools,
+            });
+            nextStates.set(backend.id, {
+              id: backend.id,
+              type: backend.type,
+              state: "ready",
+              toolCount: tools.length,
+              ...(client.serverInfo === undefined ? {} : { serverInfo: client.serverInfo }),
+            });
+          } catch {
+            await client?.close().catch(() => undefined);
+            nextStates.set(backend.id, {
+              id: backend.id,
+              type: backend.type,
+              state: "offline",
+              toolCount: 0,
+              diagnosticCode: "CONNECT_FAILED",
+            });
+          }
+        }),
+      );
+      catalogs.sort((left, right) =>
+        left.backendType < right.backendType ? -1 : left.backendType > right.backendType ? 1 : 0,
+      );
+      this.#publisher.publish(catalogs);
+    } catch (error) {
+      await Promise.all([...nextClients.values()].map(async (client) => client.close().catch(() => undefined)));
+      throw error;
+    }
     const previousClients = [...this.#clients.values()];
     this.#clients.clear();
-    for (const [backendId, client] of nextClients) {
-      this.#clients.set(backendId, client);
-    }
+    for (const [backendId, client] of nextClients) this.#clients.set(backendId, client);
+    this.#backendStates.clear();
+    for (const [backendId, state] of nextStates) this.#backendStates.set(backendId, state);
     await Promise.all(
       previousClients.map(async (client) => {
-        if (client instanceof McpBackendClient) {
-          await client.close();
-        }
+        if (client instanceof McpBackendClient) await client.close();
       }),
     );
   }
