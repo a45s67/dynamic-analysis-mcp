@@ -24,7 +24,7 @@ modify either backend installation.
 
 For debugger-only installations, omit `-CheatEngineRoot`. For the explicit
 `0.0.0.0:8000` bearer-only plaintext HTTP profile behind a transparent host proxy,
-see [single-machine LAN deployment](docs/service-with-user-agent.md#single-machine-lan-http).
+see [single-machine LAN deployment](https://gitlab.chts-ir.dev/a45s67/dynamic-machine-mcp/-/blob/main/deploy/dbg/README.md#single-machine-lan-http).
 The default remains bearer-protected loopback HTTP.
 
 GUI lifecycle operations are available only while the installing user is logged
@@ -38,9 +38,9 @@ codex mcp add dynamic-analysis `
   --bearer-token-env-var DYNAMIC_ANALYSIS_MCP_TOKEN
 ```
 
-Operational details and uninstall commands are in
-[`docs/service-with-user-agent.md`](docs/service-with-user-agent.md). Configuration
-and secret handling are described in
+Installation, runtime behavior, hot patches, package upgrades, and uninstall commands
+are consolidated in the [DBG operator guide](https://gitlab.chts-ir.dev/a45s67/dynamic-machine-mcp/-/blob/main/deploy/dbg/README.md#windows-gateway-installation).
+Configuration and secret handling are described in
 [`docs/configuration.md`](docs/configuration.md).
 
 ## Development

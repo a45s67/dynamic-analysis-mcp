@@ -30,7 +30,7 @@ Copy-Item -LiteralPath (Join-Path $workspace 'scripts\install.ps1'),(Join-Path $
 Copy-Item -LiteralPath (Join-Path $workspace 'scripts\install.ps1'),(Join-Path $workspace 'scripts\uninstall.ps1') -Destination $OutputRoot
 Copy-Item -LiteralPath (Join-Path $workspace 'third_party\WinSW-LICENSE.txt') -Destination (Join-Path $OutputRoot 'service')
 Copy-Item -LiteralPath (Join-Path $workspace 'README.md') -Destination $OutputRoot
-Copy-Item -LiteralPath (Join-Path $workspace 'docs\service-with-user-agent.md'),(Join-Path $workspace 'docs\configuration.md') -Destination (Join-Path $OutputRoot 'docs')
+Copy-Item -LiteralPath (Join-Path $workspace 'docs\configuration.md') -Destination (Join-Path $OutputRoot 'docs')
 $manifest = Get-ChildItem -LiteralPath $OutputRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
     [pscustomobject]@{ path = $_.FullName.Substring($OutputRoot.TrimEnd('\').Length + 1).Replace('\','/'); sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(); bytes = $_.Length }
 }
